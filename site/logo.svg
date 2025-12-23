@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!-- Burrow hole / tunnel -->
+  <ellipse cx="24" cy="36" rx="18" ry="8" fill="#78350f"/>
+  <ellipse cx="24" cy="36" rx="14" ry="6" fill="#451a03"/>
+  <ellipse cx="24" cy="36" rx="10" ry="4" fill="#1c0a00"/>
+
+  <!-- Ground surface -->
+  <path d="M2 36 Q24 28 46 36 L46 40 Q24 48 2 40 Z" fill="#a16207"/>
+
+  <!-- Key symbol in the burrow -->
+  <g transform="translate(24, 34)">
+    <circle cx="0" cy="0" r="3" fill="#fbbf24" stroke="#f59e0b" stroke-width="0.5"/>
+    <rect x="-0.8" y="2" width="1.6" height="6" rx="0.5" fill="#fbbf24"/>
+    <rect x="0" y="5" width="2.5" height="1" rx="0.3" fill="#fbbf24"/>
+    <rect x="0" y="7" width="1.8" height="1" rx="0.3" fill="#fbbf24"/>
+  </g>
+
+  <!-- Dirt mound details -->
+  <ellipse cx="10" cy="34" rx="3" ry="1.5" fill="#92400e" opacity="0.6"/>
+  <ellipse cx="38" cy="35" rx="2.5" ry="1.2" fill="#92400e" opacity="0.6"/>
+</svg>

@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>burrow - Directory-scoped secrets manager</title>
+  <meta name="description" content="A platform-agnostic, directory-scoped secrets manager. Store secrets outside your repos, inherit them through directory ancestry.">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="burrow - Directory-scoped secrets manager">
+  <meta property="og:description" content="A platform-agnostic, directory-scoped secrets manager. Store secrets outside your repos, inherit them through directory ancestry.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="og-image.svg">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="burrow - Directory-scoped secrets manager">
+  <meta name="twitter:description" content="A platform-agnostic, directory-scoped secrets manager. Store secrets outside your repos, inherit them through directory ancestry.">
+  <meta name="twitter:image" content="og-image.svg">
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      color: #1f2937;
+      background: #ffffff;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+
+    /* Header */
+    header {
+      padding: 20px 0;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    header .container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: #1f2937;
+    }
+
+    .logo img {
+      width: 40px;
+      height: 40px;
+    }
+
+    .logo span {
+      font-size: 24px;
+      font-weight: 600;
+      color: #92400e;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 24px;
+    }
+
+    .nav-links a {
+      color: #6b7280;
+      text-decoration: none;
+      font-size: 15px;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover {
+      color: #92400e;
+    }
+
+    /* Hero */
+    .hero {
+      padding: 80px 0 60px;
+      text-align: center;
+    }
+
+    .hero h1 {
+      font-size: 48px;
+      font-weight: 600;
+      color: #92400e;
+      margin-bottom: 16px;
+    }
+
+    .hero .tagline {
+      font-size: 20px;
+      color: #6b7280;
+      margin-bottom: 40px;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .install-box {
+      background: #fef3c7;
+      border: 1px solid #fcd34d;
+      border-radius: 8px;
+      padding: 16px 24px;
+      display: inline-block;
+      margin-bottom: 20px;
+    }
+
+    .install-box code {
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: 15px;
+      color: #92400e;
+    }
+
+    .install-note {
+      font-size: 14px;
+      color: #6b7280;
+    }
+
+    .install-note a {
+      color: #92400e;
+      text-decoration: none;
+    }
+
+    .install-note a:hover {
+      text-decoration: underline;
+    }
+
+    /* Terminal Demo */
+    .terminal-section {
+      padding: 40px 0 80px;
+    }
+
+    .terminal {
+      background: #1c1917;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    }
+
+    .terminal-header {
+      background: #292524;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .terminal-btn {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .terminal-btn.red { background: #ef4444; }
+    .terminal-btn.yellow { background: #eab308; }
+    .terminal-btn.green { background: #22c55e; }
+
+    .terminal-title {
+      flex: 1;
+      text-align: center;
+      color: #a8a29e;
+      font-size: 13px;
+    }
+
+    .terminal-body {
+      padding: 20px;
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 320px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .terminal-line {
+      margin-bottom: 4px;
+    }
+
+    .terminal-line .prompt {
+      color: #22c55e;
+    }
+
+    .terminal-line .command {
+      color: #fafaf9;
+    }
+
+    .terminal-line .output {
+      color: #a8a29e;
+    }
+
+    .terminal-line .success {
+      color: #22c55e;
+    }
+
+    .terminal-line .info {
+      color: #60a5fa;
+    }
+
+    .terminal-line .highlight {
+      color: #fbbf24;
+    }
+
+    .terminal-line .value {
+      color: #f472b6;
+    }
+
+    .cursor {
+      display: inline-block;
+      width: 8px;
+      height: 16px;
+      background: #fafaf9;
+      animation: blink 1s step-end infinite;
+      vertical-align: middle;
+    }
+
+    @keyframes blink {
+      50% { opacity: 0; }
+    }
+
+    /* Features */
+    .features {
+      padding: 60px 0;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .features h2 {
+      font-size: 32px;
+      font-weight: 600;
+      color: #1f2937;
+      margin-bottom: 40px;
+      text-align: center;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 32px;
+    }
+
+    .feature {
+      text-align: center;
+      padding: 24px;
+    }
+
+    .feature-icon {
+      font-size: 32px;
+      margin-bottom: 16px;
+    }
+
+    .feature h3 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #92400e;
+      margin-bottom: 8px;
+    }
+
+    .feature p {
+      font-size: 15px;
+      color: #6b7280;
+    }
+
+    /* Usage */
+    .usage {
+      padding: 60px 0;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .usage h2 {
+      font-size: 32px;
+      font-weight: 600;
+      color: #1f2937;
+      margin-bottom: 40px;
+    }
+
+    .command-group {
+      margin-bottom: 40px;
+    }
+
+    .command-group h4 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #92400e;
+      margin-bottom: 12px;
+    }
+
+    .command-group p {
+      font-size: 16px;
+      color: #6b7280;
+      margin-bottom: 16px;
+    }
+
+    pre {
+      background: #1c1917;
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+    }
+
+    pre code {
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: 14px;
+      color: #d6d3d1;
+    }
+
+    code {
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      background: #fef3c7;
+      border: 1px solid #fcd34d;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 14px;
+      color: #92400e;
+    }
+
+    pre code {
+      background: none;
+      border: none;
+      padding: 0;
+    }
+
+    /* Commands Table */
+    .commands {
+      padding: 60px 0;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .commands h2 {
+      font-size: 32px;
+      font-weight: 600;
+      color: #1f2937;
+      margin-bottom: 24px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    th {
+      background: #fef3c7;
+      font-weight: 600;
+      color: #92400e;
+    }
+
+    td:first-child {
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: 14px;
+      color: #92400e;
+    }
+
+    /* Footer */
+    footer {
+      padding: 40px 0;
+      border-top: 1px solid #e5e7eb;
+      text-align: center;
+      color: #6b7280;
+      font-size: 15px;
+    }
+
+    footer a {
+      color: #92400e;
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      text-decoration: underline;
+    }
+
+    /* Responsive */
+    @media (max-width: 640px) {
+      .hero h1 {
+        font-size: 36px;
+      }
+
+      .hero .tagline {
+        font-size: 18px;
+      }
+
+      .install-box {
+        padding: 12px 16px;
+      }
+
+      .install-box code {
+        font-size: 13px;
+      }
+
+      .terminal-body {
+        font-size: 12px;
+        padding: 16px;
+      }
+
+      .features h2,
+      .usage h2,
+      .commands h2 {
+        font-size: 24px;
+      }
+
+      .nav-links {
+        gap: 16px;
+      }
+
+      th, td {
+        padding: 8px 12px;
+        font-size: 14px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      header .container {
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .hero {
+        padding: 40px 0;
+      }
+
+      .hero h1 {
+        font-size: 28px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <a href="/" class="logo">
+        <img src="logo.svg" alt="burrow logo">
+        <span>burrow</span>
+      </a>
+      <nav class="nav-links">
+        <a href="https://github.com/captainsafia/burrow">GitHub</a>
+        <a href="https://github.com/captainsafia/burrow/releases">Releases</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container">
+        <h1>burrow</h1>
+        <p class="tagline">A platform-agnostic, directory-scoped secrets manager. Store secrets outside your repos, inherit them through directory ancestry.</p>
+        <div class="install-box">
+          <code>curl -fsSL https://burrow.dev/install.sh | sh</code>
+        </div>
+        <p class="install-note">Or download from <a href="https://github.com/captainsafia/burrow/releases">GitHub Releases</a></p>
+      </div>
+    </section>
+
+    <section class="terminal-section">
+      <div class="container">
+        <div class="terminal">
+          <div class="terminal-header">
+            <div class="terminal-btn red"></div>
+            <div class="terminal-btn yellow"></div>
+            <div class="terminal-btn green"></div>
+            <div class="terminal-title">~/projects/myapp</div>
+          </div>
+          <div class="terminal-body" id="terminal"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="features">
+      <div class="container">
+        <h2>Why burrow?</h2>
+        <div class="feature-grid">
+          <div class="feature">
+            <div class="feature-icon">&#128274;</div>
+            <h3>Secrets Stay Safe</h3>
+            <p>Secrets are stored in your user profile, never in your repo. No more .env files to accidentally commit.</p>
+          </div>
+          <div class="feature">
+            <div class="feature-icon">&#128194;</div>
+            <h3>Directory Scoped</h3>
+            <p>Set secrets for any directory. Child directories automatically inherit from parents.</p>
+          </div>
+          <div class="feature">
+            <div class="feature-icon">&#127760;</div>
+            <h3>Cross Platform</h3>
+            <p>Works on Linux, macOS, and Windows. Single binary, no dependencies.</p>
+          </div>
+          <div class="feature">
+            <div class="feature-icon">&#128736;</div>
+            <h3>Unix Philosophy</h3>
+            <p>Exports environment variables for shell composition. Works with any toolchain.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="usage">
+      <div class="container">
+        <h2>Usage</h2>
+
+        <div class="command-group">
+          <h4>Set a secret</h4>
+          <p>Store a secret scoped to the current directory (or specify a path).</p>
+          <pre><code>burrow set API_KEY=sk-abc123
+burrow set DATABASE_URL=postgres://... --path ~/projects</code></pre>
+        </div>
+
+        <div class="command-group">
+          <h4>Get a secret</h4>
+          <p>Retrieve a secret, resolved through directory ancestry.</p>
+          <pre><code>burrow get API_KEY --show
+burrow get API_KEY --format json</code></pre>
+        </div>
+
+        <div class="command-group">
+          <h4>List all secrets</h4>
+          <p>See all resolved secrets for the current directory.</p>
+          <pre><code>burrow list
+burrow list --format json</code></pre>
+        </div>
+
+        <div class="command-group">
+          <h4>Export to your shell</h4>
+          <p>Load secrets into your environment with a single command.</p>
+          <pre><code>eval "$(burrow export)"
+eval "$(burrow export --format shell)" && npm start</code></pre>
+        </div>
+
+        <div class="command-group">
+          <h4>Block inheritance</h4>
+          <p>Prevent a parent secret from being inherited in a child directory.</p>
+          <pre><code>burrow unset API_KEY --path ~/projects/myapp/tests</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="commands">
+      <div class="container">
+        <h2>Commands</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Command</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>set KEY=VALUE</td>
+              <td>Set a secret at the current or specified path</td>
+            </tr>
+            <tr>
+              <td>get KEY</td>
+              <td>Get a secret resolved from directory ancestry</td>
+            </tr>
+            <tr>
+              <td>list</td>
+              <td>List all resolved secrets for current directory</td>
+            </tr>
+            <tr>
+              <td>unset KEY</td>
+              <td>Block a secret with a tombstone (prevents inheritance)</td>
+            </tr>
+            <tr>
+              <td>export</td>
+              <td>Export secrets in shell, dotenv, or JSON format</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Built by <a href="https://github.com/captainsafia">@captainsafia</a></p>
+    </div>
+  </footer>
+
+  <script>
+    const demo = [
+      { type: 'command', text: 'burrow set API_KEY=sk-live-abc123' },
+      { type: 'output', text: '<span class="success">Set API_KEY at ~/projects</span>' },
+      { type: 'pause', duration: 500 },
+      { type: 'command', text: 'burrow set DATABASE_URL=postgres://localhost/mydb' },
+      { type: 'output', text: '<span class="success">Set DATABASE_URL at ~/projects</span>' },
+      { type: 'pause', duration: 500 },
+      { type: 'command', text: 'cd myapp' },
+      { type: 'output', text: '' },
+      { type: 'command', text: 'burrow list' },
+      { type: 'output', text: '<span class="highlight">API_KEY</span> <span class="output">(from ~/projects)</span>' },
+      { type: 'output', text: '<span class="highlight">DATABASE_URL</span> <span class="output">(from ~/projects)</span>' },
+      { type: 'pause', duration: 800 },
+      { type: 'command', text: 'burrow set API_KEY=sk-test-xyz789' },
+      { type: 'output', text: '<span class="success">Set API_KEY at ~/projects/myapp</span>' },
+      { type: 'pause', duration: 300 },
+      { type: 'command', text: 'burrow get API_KEY --show' },
+      { type: 'output', text: '<span class="value">sk-test-xyz789</span>' },
+      { type: 'pause', duration: 500 },
+      { type: 'command', text: 'burrow get API_KEY --format json' },
+      { type: 'output', text: '<span class="output">{</span>' },
+      { type: 'output', text: '<span class="output">  "key": "</span><span class="highlight">API_KEY</span><span class="output">",</span>' },
+      { type: 'output', text: '<span class="output">  "value": "</span><span class="value">sk-test-xyz789</span><span class="output">",</span>' },
+      { type: 'output', text: '<span class="output">  "sourcePath": "</span><span class="info">~/projects/myapp</span><span class="output">"</span>' },
+      { type: 'output', text: '<span class="output">}</span>' },
+      { type: 'pause', duration: 800 },
+      { type: 'command', text: 'eval "$(burrow export)"' },
+      { type: 'output', text: '' },
+      { type: 'command', text: 'echo $API_KEY' },
+      { type: 'output', text: '<span class="value">sk-test-xyz789</span>' },
+    ];
+
+    const terminal = document.getElementById('terminal');
+    let currentPath = '~/projects';
+
+    function addLine(html) {
+      const line = document.createElement('div');
+      line.className = 'terminal-line';
+      line.innerHTML = html;
+      terminal.appendChild(line);
+      terminal.scrollTop = terminal.scrollHeight;
+    }
+
+    async function typeCommand(text) {
+      const line = document.createElement('div');
+      line.className = 'terminal-line';
+      line.innerHTML = `<span class="prompt">${currentPath} $</span> <span class="command"></span><span class="cursor"></span>`;
+      terminal.appendChild(line);
+
+      const commandSpan = line.querySelector('.command');
+      const cursor = line.querySelector('.cursor');
+
+      for (let i = 0; i < text.length; i++) {
+        commandSpan.textContent += text[i];
+        terminal.scrollTop = terminal.scrollHeight;
+        await new Promise(r => setTimeout(r, 35));
+      }
+
+      cursor.remove();
+
+      if (text.startsWith('cd ')) {
+        currentPath = '~/projects/' + text.slice(3);
+        document.querySelector('.terminal-title').textContent = currentPath;
+      }
+    }
+
+    async function runDemo() {
+      await new Promise(r => setTimeout(r, 800));
+
+      for (const step of demo) {
+        if (step.type === 'command') {
+          await typeCommand(step.text);
+          await new Promise(r => setTimeout(r, 100));
+        } else if (step.type === 'output' && step.text) {
+          addLine(step.text);
+          await new Promise(r => setTimeout(r, 50));
+        } else if (step.type === 'pause') {
+          await new Promise(r => setTimeout(r, step.duration));
+        }
+      }
+
+      // Add final cursor
+      const finalLine = document.createElement('div');
+      finalLine.className = 'terminal-line';
+      finalLine.innerHTML = `<span class="prompt">${currentPath} $</span> <span class="cursor"></span>`;
+      terminal.appendChild(finalLine);
+    }
+
+    runDemo();
+  </script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+{
+  "name": "burrow",
+  "version": "0.1.0",
+  "description": "Platform-agnostic, directory-scoped secrets manager",
+  "type": "module",
+  "main": "dist/api.js",
+  "types": "dist/api.d.ts",
+  "bin": {
+    "burrow": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/captainsafia/burrow.git"
+  },
+  "bugs": {
+    "url": "https://github.com/captainsafia/burrow/issues"
+  },
+  "homepage": "https://github.com/captainsafia/burrow#readme",
+  "scripts": {
+    "build": "bun build src/api.ts --outdir dist --target node && dts-bundle-generator -o dist/api.d.ts src/api.ts",
+    "build:cli": "bun build src/cli.ts --outdir dist --target bun",
+    "compile": "bun build src/cli.ts --compile --outfile burrow",
+    "compile:linux-x64": "bun build src/cli.ts --compile --target=bun-linux-x64 --outfile burrow-linux-x64",
+    "compile:linux-arm64": "bun build src/cli.ts --compile --target=bun-linux-arm64 --outfile burrow-linux-arm64",
+    "compile:darwin-x64": "bun build src/cli.ts --compile --target=bun-darwin-x64 --outfile burrow-darwin-x64",
+    "compile:darwin-arm64": "bun build src/cli.ts --compile --target=bun-darwin-arm64 --outfile burrow-darwin-arm64",
+    "compile:windows-x64": "bun build src/cli.ts --compile --target=bun-windows-x64 --outfile burrow-windows-x64.exe",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "dts-bundle-generator": "^9.5.1",
+    "typescript": "^5"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/api.d.ts",
+      "import": "./dist/api.js"
+    }
+  },
+  "keywords": [
+    "secrets",
+    "environment",
+    "dotenv",
+    "direnv",
+    "configuration"
+  ],
+  "license": "MIT"
+}

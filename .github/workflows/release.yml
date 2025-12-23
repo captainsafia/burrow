@@ -1,0 +1,245 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+    branches:
+      - main
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Type check
+        run: bun run typecheck
+
+      - name: Run tests
+        run: bun test
+
+      - name: Set version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            CURRENT_VERSION=$(bun -e "console.log(require('./package.json').version)")
+            COMMIT_SHA=${GITHUB_SHA::7}
+            VERSION="${CURRENT_VERSION}-preview.${COMMIT_SHA}"
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          bun -e "
+            const pkg = require('./package.json');
+            pkg.version = '${VERSION}';
+            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+          "
+
+      - name: Build npm package
+        run: bun run build
+
+      - name: Build Linux x64
+        run: bun build src/cli.ts --compile --minify --target=bun-linux-x64 --outfile burrow-linux-x64
+
+      - name: Build Linux ARM64
+        run: bun build src/cli.ts --compile --minify --target=bun-linux-arm64 --outfile burrow-linux-arm64
+
+      - name: Build macOS x64
+        run: bun build src/cli.ts --compile --minify --target=bun-darwin-x64 --outfile burrow-darwin-x64
+
+      - name: Build macOS ARM64
+        run: bun build src/cli.ts --compile --minify --target=bun-darwin-arm64 --outfile burrow-darwin-arm64
+
+      - name: Build Windows x64
+        run: bun build src/cli.ts --compile --minify --target=bun-windows-x64 --outfile burrow-windows-x64.exe
+
+      - name: Upload executables
+        uses: actions/upload-artifact@v4
+        with:
+          name: executables
+          path: |
+            burrow-linux-x64
+            burrow-linux-arm64
+            burrow-darwin-x64
+            burrow-darwin-arm64
+            burrow-windows-x64.exe
+          retention-days: 7
+
+      - name: Upload npm package
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: |
+            dist/
+            package.json
+          retention-days: 7
+
+  prerelease:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Set prerelease version
+        run: |
+          CURRENT_VERSION=$(bun -e "console.log(require('./package.json').version)")
+          COMMIT_SHA=${GITHUB_SHA::7}
+          PRERELEASE_VERSION="${CURRENT_VERSION}-preview.${COMMIT_SHA}"
+          echo "PRERELEASE_VERSION=${PRERELEASE_VERSION}" >> $GITHUB_ENV
+
+      - name: Download executables
+        uses: actions/download-artifact@v4
+        with:
+          name: executables
+          path: ./release-assets
+
+      - name: Download npm package
+        uses: actions/download-artifact@v4
+        with:
+          name: npm-package
+          path: ./
+
+      - name: Publish to npm (prerelease)
+        run: npm publish --provenance --access public --tag preview
+
+      - name: Create GitHub prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.PRERELEASE_VERSION }}
+          name: v${{ env.PRERELEASE_VERSION }} (Preview)
+          prerelease: true
+          files: |
+            release-assets/burrow-linux-x64
+            release-assets/burrow-linux-arm64
+            release-assets/burrow-darwin-x64
+            release-assets/burrow-darwin-arm64
+            release-assets/burrow-windows-x64.exe
+          body: |
+            ## Preview Release
+
+            This is an automated preview release from the main branch.
+
+            **Commit:** ${{ github.sha }}
+
+            ### Installation
+
+            **npm:**
+            ```bash
+            npm install burrow@preview
+            ```
+
+            **Binary (Linux/macOS):**
+            ```bash
+            curl -fsSL https://github.com/${{ github.repository }}/releases/download/v${{ env.PRERELEASE_VERSION }}/burrow-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/x64/' | sed 's/aarch64/arm64/') -o burrow
+            chmod +x burrow
+            sudo mv burrow /usr/local/bin/
+            ```
+
+            ### Download
+
+            | Platform | Binary |
+            |----------|--------|
+            | Linux x64 | `burrow-linux-x64` |
+            | Linux ARM64 | `burrow-linux-arm64` |
+            | macOS x64 | `burrow-darwin-x64` |
+            | macOS ARM64 | `burrow-darwin-arm64` |
+            | Windows x64 | `burrow-windows-x64.exe` |
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Set release version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+
+      - name: Download executables
+        uses: actions/download-artifact@v4
+        with:
+          name: executables
+          path: ./release-assets
+
+      - name: Download npm package
+        uses: actions/download-artifact@v4
+        with:
+          name: npm-package
+          path: ./
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: v${{ env.VERSION }}
+          files: |
+            release-assets/burrow-linux-x64
+            release-assets/burrow-linux-arm64
+            release-assets/burrow-darwin-x64
+            release-assets/burrow-darwin-arm64
+            release-assets/burrow-windows-x64.exe
+          body: |
+            ## Release v${{ env.VERSION }}
+
+            ### Installation
+
+            **npm:**
+            ```bash
+            npm install burrow
+            ```
+
+            **Binary (Linux/macOS):**
+            ```bash
+            curl -fsSL https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}/burrow-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/x64/' | sed 's/aarch64/arm64/') -o burrow
+            chmod +x burrow
+            sudo mv burrow /usr/local/bin/
+            ```
+
+            ### Download
+
+            | Platform | Binary |
+            |----------|--------|
+            | Linux x64 | `burrow-linux-x64` |
+            | Linux ARM64 | `burrow-linux-arm64` |
+            | macOS x64 | `burrow-darwin-x64` |
+            | macOS ARM64 | `burrow-darwin-arm64` |
+            | Windows x64 | `burrow-windows-x64.exe` |
+
+            ### Changelog
+
+            See commits since last release: https://github.com/${{ github.repository }}/compare/v${{ env.VERSION }}...HEAD
