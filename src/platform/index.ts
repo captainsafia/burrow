@@ -2,8 +2,14 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 const APP_NAME = "burrow";
+const CONFIG_DIR_ENV = "BURROW_CONFIG_DIR";
 
 export function getConfigDir(): string {
+  const envOverride = process.env[CONFIG_DIR_ENV];
+  if (envOverride) {
+    return envOverride;
+  }
+
   const platform = process.platform;
 
   if (platform === "win32") {

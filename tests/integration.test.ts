@@ -1,0 +1,729 @@
+import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { mkdir, rm, readFile, symlink } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { $ } from "bun";
+
+interface RunResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
+interface TestContext {
+  configDir: string;
+  workspaceDir: string;
+  root: string;
+  repo: string;
+  sub: string;
+}
+
+const CLI_PATH = join(import.meta.dir, "..", "src", "cli.ts");
+
+async function runBurrow(
+  args: string[],
+  options: { cwd: string; configDir: string }
+): Promise<RunResult> {
+  const result = await $`bun ${CLI_PATH} ${args}`
+    .cwd(options.cwd)
+    .env({ ...process.env, BURROW_CONFIG_DIR: options.configDir })
+    .nothrow()
+    .quiet();
+
+  return {
+    stdout: result.stdout.toString().trim(),
+    stderr: result.stderr.toString().trim(),
+    exitCode: result.exitCode,
+  };
+}
+
+async function createTestContext(): Promise<TestContext> {
+  const base = join(tmpdir(), `burrow-integration-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const configDir = join(base, "config");
+  const workspaceDir = join(base, "workspace");
+  const root = join(workspaceDir, "root");
+  const repo = join(root, "repo");
+  const sub = join(repo, "sub");
+
+  await mkdir(configDir, { recursive: true });
+  await mkdir(sub, { recursive: true });
+
+  return { configDir, workspaceDir, root, repo, sub };
+}
+
+async function cleanupTestContext(ctx: TestContext): Promise<void> {
+  const base = join(ctx.configDir, "..");
+  await rm(base, { recursive: true, force: true });
+}
+
+describe("Integration Tests", () => {
+  let ctx: TestContext;
+
+  beforeEach(async () => {
+    ctx = await createTestContext();
+  });
+
+  afterEach(async () => {
+    await cleanupTestContext(ctx);
+  });
+
+  describe("Core happy paths", () => {
+    test("1. Set then get in same directory", async () => {
+      const set = await runBurrow(["set", "API_KEY=123"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(set.exitCode).toBe(0);
+
+      const get = await runBurrow(["get", "API_KEY", "--show"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).toBe(0);
+      expect(get.stdout).toBe("123");
+    });
+
+    test("2. Set in parent, get in child (inheritance)", async () => {
+      await runBurrow(["set", "PARENT_KEY=inherited"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const get = await runBurrow(["get", "PARENT_KEY", "--show"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).toBe(0);
+      expect(get.stdout).toBe("inherited");
+    });
+
+    test("3. Override in child (nearest wins)", async () => {
+      await runBurrow(["set", "API_KEY=parent"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      await runBurrow(["set", "API_KEY=child"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+
+      const getChild = await runBurrow(["get", "API_KEY", "--show"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+      expect(getChild.stdout).toBe("child");
+
+      const getParent = await runBurrow(["get", "API_KEY", "--show"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(getParent.stdout).toBe("parent");
+    });
+
+    test("4. Multiple keys + merge across scopes", async () => {
+      await runBurrow(["set", "A=1"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      await runBurrow(["set", "B=2"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+
+      const list = await runBurrow(["list", "--format", "json"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+      expect(list.exitCode).toBe(0);
+
+      const secrets = JSON.parse(list.stdout);
+      expect(secrets).toHaveLength(2);
+
+      const keyA = secrets.find((s: { key: string }) => s.key === "A");
+      const keyB = secrets.find((s: { key: string }) => s.key === "B");
+
+      expect(keyA).toBeDefined();
+      expect(keyA.sourcePath).toBe(ctx.repo);
+      expect(keyB).toBeDefined();
+      expect(keyB.sourcePath).toBe(ctx.sub);
+    });
+
+    test("5. --path overrides cwd for set/unset/export", async () => {
+      await runBurrow(["set", "A=1", "--path", ctx.repo], {
+        cwd: ctx.root,
+        configDir: ctx.configDir,
+      });
+
+      const get = await runBurrow(["get", "A", "--show"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).toBe(0);
+      expect(get.stdout).toBe("1");
+
+      const exportResult = await runBurrow(["export", "--path", ctx.repo], {
+        cwd: ctx.root,
+        configDir: ctx.configDir,
+      });
+      expect(exportResult.stdout).toContain("A=");
+    });
+  });
+
+  describe("Tombstones / unset semantics", () => {
+    test("6. Unset blocks inheritance", async () => {
+      await runBurrow(["set", "API_KEY=parent"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      await runBurrow(["unset", "API_KEY"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+
+      const get = await runBurrow(["get", "API_KEY", "--show"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).not.toBe(0);
+      expect(get.stderr).toContain("not found");
+
+      const list = await runBurrow(["list"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+      expect(list.stdout).not.toContain("API_KEY");
+    });
+
+    test("7. Unset only affects that subtree", async () => {
+      await runBurrow(["set", "API_KEY=parent"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      await runBurrow(["unset", "API_KEY"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+
+      const get = await runBurrow(["get", "API_KEY", "--show"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).toBe(0);
+      expect(get.stdout).toBe("parent");
+    });
+
+    test("8. Re-adding after unset works", async () => {
+      await runBurrow(["set", "API_KEY=parent"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      await runBurrow(["unset", "API_KEY"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+      await runBurrow(["set", "API_KEY=child"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+
+      const get = await runBurrow(["get", "API_KEY", "--show"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).toBe(0);
+      expect(get.stdout).toBe("child");
+    });
+
+    test("9. Unset idempotency", async () => {
+      await runBurrow(["unset", "SOME_KEY"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const second = await runBurrow(["unset", "SOME_KEY"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(second.exitCode).toBe(0);
+    });
+
+    test("10. Unset of unknown key succeeds (no-op)", async () => {
+      const result = await runBurrow(["unset", "NEVER_SET"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(result.exitCode).toBe(0);
+    });
+  });
+
+  describe("Export format correctness", () => {
+    test("11. Shell export contains only safe statements", async () => {
+      await runBurrow(["set", "KEY1=value1"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      await runBurrow(["set", "KEY2=value2"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const exportResult = await runBurrow(["export", "--format", "shell"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const lines = exportResult.stdout.split("\n").filter(Boolean);
+      for (const line of lines) {
+        expect(line).toMatch(/^export [A-Z_][A-Z0-9_]*='.*'$/);
+      }
+    });
+
+    test("12. Shell escaping works - spaces", async () => {
+      await runBurrow(["set", "SPACED=hello world"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const exportResult = await runBurrow(["export", "--format", "shell"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(exportResult.stdout).toBe("export SPACED='hello world'");
+
+      const proc = Bun.spawn(["bash", "-c", `${exportResult.stdout}; echo "$SPACED"`], {
+        stdout: "pipe",
+      });
+      const output = await new Response(proc.stdout).text();
+      expect(output.trim()).toBe("hello world");
+    });
+
+    test("12. Shell escaping works - single quotes", async () => {
+      await runBurrow(["set", "QUOTED=it's fine"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const exportResult = await runBurrow(["export", "--format", "shell"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(exportResult.stdout).toContain("QUOTED=");
+
+      const proc = Bun.spawn(["bash", "-c", `${exportResult.stdout}; echo "$QUOTED"`], {
+        stdout: "pipe",
+      });
+      const output = await new Response(proc.stdout).text();
+      expect(output.trim()).toBe("it's fine");
+    });
+
+    test("12. Shell escaping works - special characters", async () => {
+      await runBurrow(["set", "SPECIAL=$HOME and `cmd`"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const exportResult = await runBurrow(["export", "--format", "shell"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(exportResult.stdout).toContain("SPECIAL=");
+
+      const proc = Bun.spawn(["bash", "-c", `${exportResult.stdout}; echo "$SPECIAL"`], {
+        stdout: "pipe",
+      });
+      const output = await new Response(proc.stdout).text();
+      expect(output.trim()).toBe("$HOME and `cmd`");
+    });
+
+    test("13. dotenv format correctness", async () => {
+      await runBurrow(["set", "KEY=value"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const exportResult = await runBurrow(["export", "--format", "dotenv"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(exportResult.stdout).toMatch(/^[A-Z_][A-Z0-9_]*=".*"$/);
+    });
+
+    test("13. dotenv format rejects multiline values", async () => {
+      await runBurrow(["set", "MULTI=line1\nline2"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const exportResult = await runBurrow(["export", "--format", "dotenv"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(exportResult.exitCode).not.toBe(0);
+      expect(exportResult.stderr).toContain("newline");
+    });
+
+    test("14. json export correctness", async () => {
+      await runBurrow(["set", "KEY=value"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const exportResult = await runBurrow(["export", "--format", "json"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(exportResult.exitCode).toBe(0);
+      const parsed = JSON.parse(exportResult.stdout);
+      expect(parsed.KEY).toBe("value");
+    });
+
+    test("15. Export reflects resolution + tombstones", async () => {
+      await runBurrow(["set", "API_KEY=parent"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      await runBurrow(["unset", "API_KEY"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+
+      const exportResult = await runBurrow(["export", "--format", "json"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+
+      const parsed = JSON.parse(exportResult.stdout);
+      expect(parsed.API_KEY).toBeUndefined();
+    });
+  });
+
+  describe("List/get UX + exit codes", () => {
+    test("16. Get redaction default", async () => {
+      await runBurrow(["set", "SECRET=mysecretvalue"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const redacted = await runBurrow(["get", "SECRET"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(redacted.stdout).not.toBe("mysecretvalue");
+      expect(redacted.stdout).toContain("****");
+
+      const shown = await runBurrow(["get", "SECRET", "--show"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(shown.stdout).toBe("mysecretvalue");
+    });
+
+    test("17. Get missing key returns non-zero exit", async () => {
+      const result = await runBurrow(["get", "MISSING_KEY"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain("not found");
+    });
+
+    test("18. List shows source path", async () => {
+      await runBurrow(["set", "PARENT_KEY=p"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      await runBurrow(["set", "CHILD_KEY=c"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+
+      const list = await runBurrow(["list", "--format", "json"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+
+      const secrets = JSON.parse(list.stdout);
+      const parent = secrets.find((s: { key: string }) => s.key === "PARENT_KEY");
+      const child = secrets.find((s: { key: string }) => s.key === "CHILD_KEY");
+
+      expect(parent.sourcePath).toBe(ctx.repo);
+      expect(child.sourcePath).toBe(ctx.sub);
+    });
+  });
+
+  describe("Path canonicalization / matching", () => {
+    test("19. Ancestor matching uses canonical absolute paths", async () => {
+      const relativePath = join(ctx.repo, "..", "repo");
+
+      await runBurrow(["set", "KEY=value", "--path", relativePath], {
+        cwd: ctx.root,
+        configDir: ctx.configDir,
+      });
+
+      const get = await runBurrow(["get", "KEY", "--show"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).toBe(0);
+      expect(get.stdout).toBe("value");
+    });
+
+    test("20. Prefix-collision safety", async () => {
+      const repo2 = join(ctx.root, "repo2");
+      await mkdir(repo2, { recursive: true });
+
+      await runBurrow(["set", "KEY=repo1"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const get = await runBurrow(["get", "KEY"], {
+        cwd: repo2,
+        configDir: ctx.configDir,
+      });
+
+      expect(get.exitCode).not.toBe(0);
+    });
+
+    test("21. Symlink resolution", async () => {
+      const linkPath = join(ctx.root, "repo-link");
+      await symlink(ctx.repo, linkPath);
+
+      await runBurrow(["set", "KEY=value"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const get = await runBurrow(["get", "KEY", "--show"], {
+        cwd: linkPath,
+        configDir: ctx.configDir,
+      });
+
+      expect(get.exitCode).toBe(0);
+      expect(get.stdout).toBe("value");
+    });
+  });
+
+  describe("Concurrency / robustness", () => {
+    test("22. Store file is valid JSON after set", async () => {
+      await runBurrow(["set", "KEY=value"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const storeContent = await readFile(
+        join(ctx.configDir, "store.json"),
+        "utf-8"
+      );
+      expect(() => JSON.parse(storeContent)).not.toThrow();
+    });
+
+    test("23. Repeated sets don't corrupt store", async () => {
+      for (let i = 0; i < 10; i++) {
+        await runBurrow(["set", `KEY=value${i}`], {
+          cwd: ctx.repo,
+          configDir: ctx.configDir,
+        });
+      }
+
+      const storeContent = await readFile(
+        join(ctx.configDir, "store.json"),
+        "utf-8"
+      );
+      const store = JSON.parse(storeContent);
+      expect(store.version).toBe(1);
+
+      const get = await runBurrow(["get", "KEY", "--show"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(get.stdout).toBe("value9");
+    });
+  });
+
+  describe("Validation and error handling", () => {
+    test("24. Invalid key names rejected - starts with number", async () => {
+      const result = await runBurrow(["set", "1BAD=value"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain("Invalid");
+    });
+
+    test("24. Invalid key names rejected - contains hyphen", async () => {
+      const result = await runBurrow(["set", "BAD-KEY=value"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain("Invalid");
+    });
+
+    test("24. Invalid key names rejected - lowercase", async () => {
+      const result = await runBurrow(["set", "lowercase=value"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain("Invalid");
+    });
+
+    test("25. Invalid KEY=VALUE syntax - no equals", async () => {
+      const result = await runBurrow(["set", "JUSTKEY"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain("KEY=VALUE");
+    });
+
+    test("25. Invalid KEY=VALUE syntax - empty key", async () => {
+      const result = await runBurrow(["set", "=VALUE"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(result.exitCode).not.toBe(0);
+    });
+
+    test("26. Bad format flag", async () => {
+      const result = await runBurrow(["export", "--format", "nope"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain("Invalid format");
+    });
+
+    test("27. Non-existent --path creates scope anyway", async () => {
+      const nonExistent = join(ctx.root, "does-not-exist");
+
+      const result = await runBurrow(["set", "KEY=value", "--path", nonExistent], {
+        cwd: ctx.root,
+        configDir: ctx.configDir,
+      });
+
+      expect(result.exitCode).toBe(0);
+    });
+  });
+
+  describe("Config dir isolation", () => {
+    test("29. BURROW_CONFIG_DIR override works", async () => {
+      await runBurrow(["set", "ISOLATED=yes"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const storeContent = await readFile(
+        join(ctx.configDir, "store.json"),
+        "utf-8"
+      );
+      expect(storeContent).toContain("ISOLATED");
+
+      const altConfigDir = join(ctx.workspaceDir, "alt-config");
+      await mkdir(altConfigDir, { recursive: true });
+
+      const get = await runBurrow(["get", "ISOLATED"], {
+        cwd: ctx.repo,
+        configDir: altConfigDir,
+      });
+
+      expect(get.exitCode).not.toBe(0);
+    });
+  });
+
+  describe("Edge cases", () => {
+    test("Empty value is allowed", async () => {
+      await runBurrow(["set", "EMPTY="], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const get = await runBurrow(["get", "EMPTY", "--show"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(get.exitCode).toBe(0);
+      expect(get.stdout).toBe("");
+    });
+
+    test("Value with equals sign", async () => {
+      await runBurrow(["set", "EQUATION=a=b=c"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const get = await runBurrow(["get", "EQUATION", "--show"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(get.exitCode).toBe(0);
+      expect(get.stdout).toBe("a=b=c");
+    });
+
+    test("List empty directory shows message", async () => {
+      const list = await runBurrow(["list"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(list.exitCode).toBe(0);
+      expect(list.stdout).toContain("No secrets found");
+    });
+
+    test("Export empty directory produces empty output", async () => {
+      const exportResult = await runBurrow(["export", "--format", "shell"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(exportResult.exitCode).toBe(0);
+      expect(exportResult.stdout).toBe("");
+    });
+
+    test("Underscore-only key is valid", async () => {
+      await runBurrow(["set", "_=value"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const get = await runBurrow(["get", "_", "--show"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(get.exitCode).toBe(0);
+      expect(get.stdout).toBe("value");
+    });
+
+    test("Key with numbers is valid", async () => {
+      await runBurrow(["set", "API_KEY_V2=value"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const get = await runBurrow(["get", "API_KEY_V2", "--show"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(get.exitCode).toBe(0);
+      expect(get.stdout).toBe("value");
+    });
+  });
+});
