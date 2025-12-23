@@ -3,7 +3,8 @@
 import { Command } from "commander";
 import { BurrowClient, type ExportFormat } from "./api.ts";
 
-const VERSION = "0.1.0";
+// Read version from package.json at build time
+const packageJson = await import("../package.json");
 
 function redactValue(value: string): string {
   if (value.length <= 4) {
@@ -17,7 +18,7 @@ const program = new Command();
 program
   .name("burrow")
   .description("Directory-scoped secrets manager")
-  .version(VERSION);
+  .version(packageJson.version);
 
 program
   .command("set")
