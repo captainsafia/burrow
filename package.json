@@ -49,5 +49,8 @@
     "direnv",
     "configuration"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^14.0.2"
+  }
 }
