@@ -1,16 +1,16 @@
 #!/usr/bin/env bun
 
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { BurrowClient, type ExportFormat } from "./api.ts";
 
 // Read version from package.json at build time
 const packageJson = await import("../package.json");
 
-function redactValue(value: string): string {
-  if (value.length <= 4) {
-    return "****";
+function validatePath(value: string): string {
+  if (value.trim() === "") {
+    throw new Error("Path cannot be empty");
   }
-  return value.slice(0, 2) + "****" + value.slice(-2);
+  return value;
 }
 
 const program = new Command();
@@ -24,7 +24,7 @@ program
   .command("set")
   .description("Set a secret at the given path")
   .argument("<key=value>", "Secret in KEY=VALUE format")
-  .option("-p, --path <dir>", "Directory to scope the secret to (default: cwd)")
+  .option("-p, --path <dir>", "Directory to scope the secret to (default: cwd)", validatePath)
   .action(async (keyValue: string, options: { path?: string }) => {
     const client = new BurrowClient();
     const eqIndex = keyValue.indexOf("=");
@@ -50,9 +50,8 @@ program
   .command("get")
   .description("Get a secret resolved from cwd ancestry")
   .argument("<key>", "Secret key to retrieve")
-  .option("-s, --show", "Show actual value (default: redacted)")
-  .option("-f, --format <format>", "Output format: plain, json", "plain")
-  .action(async (key: string, options: { show?: boolean; format: string }) => {
+  .addOption(new Option("-f, --format <format>", "Output format").choices(["plain", "json"]).default("plain"))
+  .action(async (key: string, options: { format: string }) => {
     const client = new BurrowClient();
 
     try {
@@ -68,7 +67,7 @@ program
           JSON.stringify(
             {
               key: secret.key,
-              value: options.show ? secret.value : redactValue(secret.value),
+              value: secret.value,
               sourcePath: secret.sourcePath,
             },
             null,
@@ -76,11 +75,7 @@ program
           )
         );
       } else {
-        if (options.show) {
-          console.log(secret.value);
-        } else {
-          console.log(redactValue(secret.value));
-        }
+        console.log(secret.value);
       }
     } catch (error) {
       console.error(`Error: ${(error as Error).message}`);
@@ -91,7 +86,7 @@ program
 program
   .command("list")
   .description("List all resolved secrets for cwd")
-  .option("-f, --format <format>", "Output format: plain, json", "plain")
+  .addOption(new Option("-f, --format <format>", "Output format").choices(["plain", "json"]).default("plain"))
   .action(async (options: { format: string }) => {
     const client = new BurrowClient();
 
@@ -110,13 +105,13 @@ program
       if (options.format === "json") {
         const output = secrets.map((s) => ({
           key: s.key,
-          value: redactValue(s.value),
+          value: s.value,
           sourcePath: s.sourcePath,
         }));
         console.log(JSON.stringify(output, null, 2));
       } else {
         for (const secret of secrets) {
-          console.log(`${secret.key} (from ${secret.sourcePath})`);
+          console.log(`${secret.key}=${secret.value} (from ${secret.sourcePath})`);
         }
       }
     } catch (error) {
@@ -129,7 +124,7 @@ program
   .command("unset")
   .description("Block a key with a tombstone (prevents inheritance)")
   .argument("<key>", "Secret key to block")
-  .option("-p, --path <dir>", "Directory to scope the tombstone to (default: cwd)")
+  .option("-p, --path <dir>", "Directory to scope the tombstone to (default: cwd)", validatePath)
   .action(async (key: string, options: { path?: string }) => {
     const client = new BurrowClient();
 
@@ -145,17 +140,12 @@ program
 program
   .command("export")
   .description("Export resolved secrets in various formats")
-  .option("-f, --format <format>", "Export format: shell, dotenv, json", "shell")
-  .option("-p, --path <dir>", "Directory to resolve from (default: cwd)")
+  .addOption(new Option("-f, --format <format>", "Export format").choices(["shell", "dotenv", "json"]).default("shell"))
+  .option("-p, --path <dir>", "Directory to resolve from (default: cwd)", validatePath)
   .option("--sources", "Include source paths in json output")
   .action(async (options: { format: string; path?: string; sources?: boolean }) => {
     const client = new BurrowClient();
     const format = options.format as ExportFormat;
-
-    if (!["shell", "dotenv", "json"].includes(format)) {
-      console.error(`Error: Invalid format "${format}". Use shell, dotenv, or json.`);
-      process.exit(1);
-    }
 
     try {
       const output = await client.export({

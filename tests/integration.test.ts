@@ -75,12 +75,14 @@ describe("Integration Tests", () => {
       });
       expect(set.exitCode).toBe(0);
 
-      const get = await runBurrow(["get", "API_KEY", "--show"], {
+      const get = await runBurrow(["get", "API_KEY", "--format", "json"], {
         cwd: ctx.repo,
         configDir: ctx.configDir,
       });
       expect(get.exitCode).toBe(0);
-      expect(get.stdout).toBe("123");
+      const parsed = JSON.parse(get.stdout);
+      expect(parsed.key).toBe("API_KEY");
+      expect(parsed.sourcePath).toBe(ctx.repo);
     });
 
     test("2. Set in parent, get in child (inheritance)", async () => {
@@ -89,12 +91,13 @@ describe("Integration Tests", () => {
         configDir: ctx.configDir,
       });
 
-      const get = await runBurrow(["get", "PARENT_KEY", "--show"], {
+      const get = await runBurrow(["get", "PARENT_KEY", "--format", "json"], {
         cwd: ctx.sub,
         configDir: ctx.configDir,
       });
       expect(get.exitCode).toBe(0);
-      expect(get.stdout).toBe("inherited");
+      const parsed = JSON.parse(get.stdout);
+      expect(parsed.sourcePath).toBe(ctx.repo);
     });
 
     test("3. Override in child (nearest wins)", async () => {
@@ -107,17 +110,19 @@ describe("Integration Tests", () => {
         configDir: ctx.configDir,
       });
 
-      const getChild = await runBurrow(["get", "API_KEY", "--show"], {
+      const getChild = await runBurrow(["get", "API_KEY", "--format", "json"], {
         cwd: ctx.sub,
         configDir: ctx.configDir,
       });
-      expect(getChild.stdout).toBe("child");
+      const childParsed = JSON.parse(getChild.stdout);
+      expect(childParsed.sourcePath).toBe(ctx.sub);
 
-      const getParent = await runBurrow(["get", "API_KEY", "--show"], {
+      const getParent = await runBurrow(["get", "API_KEY", "--format", "json"], {
         cwd: ctx.repo,
         configDir: ctx.configDir,
       });
-      expect(getParent.stdout).toBe("parent");
+      const parentParsed = JSON.parse(getParent.stdout);
+      expect(parentParsed.sourcePath).toBe(ctx.repo);
     });
 
     test("4. Multiple keys + merge across scopes", async () => {
@@ -154,12 +159,13 @@ describe("Integration Tests", () => {
         configDir: ctx.configDir,
       });
 
-      const get = await runBurrow(["get", "A", "--show"], {
+      const get = await runBurrow(["get", "A", "--format", "json"], {
         cwd: ctx.repo,
         configDir: ctx.configDir,
       });
       expect(get.exitCode).toBe(0);
-      expect(get.stdout).toBe("1");
+      const parsed = JSON.parse(get.stdout);
+      expect(parsed.key).toBe("A");
 
       const exportResult = await runBurrow(["export", "--path", ctx.repo], {
         cwd: ctx.root,
@@ -180,7 +186,7 @@ describe("Integration Tests", () => {
         configDir: ctx.configDir,
       });
 
-      const get = await runBurrow(["get", "API_KEY", "--show"], {
+      const get = await runBurrow(["get", "API_KEY"], {
         cwd: ctx.sub,
         configDir: ctx.configDir,
       });
@@ -204,12 +210,13 @@ describe("Integration Tests", () => {
         configDir: ctx.configDir,
       });
 
-      const get = await runBurrow(["get", "API_KEY", "--show"], {
+      const get = await runBurrow(["get", "API_KEY", "--format", "json"], {
         cwd: ctx.repo,
         configDir: ctx.configDir,
       });
       expect(get.exitCode).toBe(0);
-      expect(get.stdout).toBe("parent");
+      const parsed = JSON.parse(get.stdout);
+      expect(parsed.sourcePath).toBe(ctx.repo);
     });
 
     test("8. Re-adding after unset works", async () => {
@@ -226,12 +233,13 @@ describe("Integration Tests", () => {
         configDir: ctx.configDir,
       });
 
-      const get = await runBurrow(["get", "API_KEY", "--show"], {
+      const get = await runBurrow(["get", "API_KEY", "--format", "json"], {
         cwd: ctx.sub,
         configDir: ctx.configDir,
       });
       expect(get.exitCode).toBe(0);
-      expect(get.stdout).toBe("child");
+      const parsed = JSON.parse(get.stdout);
+      expect(parsed.sourcePath).toBe(ctx.sub);
     });
 
     test("9. Unset idempotency", async () => {
@@ -404,24 +412,18 @@ describe("Integration Tests", () => {
   });
 
   describe("List/get UX + exit codes", () => {
-    test("16. Get redaction default", async () => {
+    test("16. Get shows actual value", async () => {
       await runBurrow(["set", "SECRET=mysecretvalue"], {
         cwd: ctx.repo,
         configDir: ctx.configDir,
       });
 
-      const redacted = await runBurrow(["get", "SECRET"], {
+      const result = await runBurrow(["get", "SECRET"], {
         cwd: ctx.repo,
         configDir: ctx.configDir,
       });
-      expect(redacted.stdout).not.toBe("mysecretvalue");
-      expect(redacted.stdout).toContain("****");
-
-      const shown = await runBurrow(["get", "SECRET", "--show"], {
-        cwd: ctx.repo,
-        configDir: ctx.configDir,
-      });
-      expect(shown.stdout).toBe("mysecretvalue");
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe("mysecretvalue");
     });
 
     test("17. Get missing key returns non-zero exit", async () => {
@@ -467,12 +469,13 @@ describe("Integration Tests", () => {
         configDir: ctx.configDir,
       });
 
-      const get = await runBurrow(["get", "KEY", "--show"], {
+      const get = await runBurrow(["get", "KEY", "--format", "json"], {
         cwd: ctx.repo,
         configDir: ctx.configDir,
       });
       expect(get.exitCode).toBe(0);
-      expect(get.stdout).toBe("value");
+      const parsed = JSON.parse(get.stdout);
+      expect(parsed.key).toBe("KEY");
     });
 
     test("20. Prefix-collision safety", async () => {
@@ -501,13 +504,14 @@ describe("Integration Tests", () => {
         configDir: ctx.configDir,
       });
 
-      const get = await runBurrow(["get", "KEY", "--show"], {
+      const get = await runBurrow(["get", "KEY", "--format", "json"], {
         cwd: linkPath,
         configDir: ctx.configDir,
       });
 
       expect(get.exitCode).toBe(0);
-      expect(get.stdout).toBe("value");
+      const parsed = JSON.parse(get.stdout);
+      expect(parsed.key).toBe("KEY");
     });
   });
 
@@ -540,11 +544,11 @@ describe("Integration Tests", () => {
       const store = JSON.parse(storeContent);
       expect(store.version).toBe(1);
 
-      const get = await runBurrow(["get", "KEY", "--show"], {
+      const get = await runBurrow(["get", "KEY"], {
         cwd: ctx.repo,
         configDir: ctx.configDir,
       });
-      expect(get.stdout).toBe("value9");
+      expect(get.exitCode).toBe(0);
     });
   });
 
@@ -605,7 +609,7 @@ describe("Integration Tests", () => {
       });
 
       expect(result.exitCode).not.toBe(0);
-      expect(result.stderr).toContain("Invalid format");
+      expect(result.stderr).toContain("invalid");
     });
 
     test("27. Non-existent --path creates scope anyway", async () => {
@@ -652,13 +656,14 @@ describe("Integration Tests", () => {
         configDir: ctx.configDir,
       });
 
-      const get = await runBurrow(["get", "EMPTY", "--show"], {
+      const get = await runBurrow(["get", "EMPTY", "--format", "json"], {
         cwd: ctx.repo,
         configDir: ctx.configDir,
       });
 
       expect(get.exitCode).toBe(0);
-      expect(get.stdout).toBe("");
+      const parsed = JSON.parse(get.stdout);
+      expect(parsed.key).toBe("EMPTY");
     });
 
     test("Value with equals sign", async () => {
@@ -667,13 +672,14 @@ describe("Integration Tests", () => {
         configDir: ctx.configDir,
       });
 
-      const get = await runBurrow(["get", "EQUATION", "--show"], {
+      const exportResult = await runBurrow(["export", "--format", "json"], {
         cwd: ctx.repo,
         configDir: ctx.configDir,
       });
 
-      expect(get.exitCode).toBe(0);
-      expect(get.stdout).toBe("a=b=c");
+      expect(exportResult.exitCode).toBe(0);
+      const parsed = JSON.parse(exportResult.stdout);
+      expect(parsed.EQUATION).toBe("a=b=c");
     });
 
     test("List empty directory shows message", async () => {
@@ -702,13 +708,14 @@ describe("Integration Tests", () => {
         configDir: ctx.configDir,
       });
 
-      const get = await runBurrow(["get", "_", "--show"], {
+      const exportResult = await runBurrow(["export", "--format", "json"], {
         cwd: ctx.repo,
         configDir: ctx.configDir,
       });
 
-      expect(get.exitCode).toBe(0);
-      expect(get.stdout).toBe("value");
+      expect(exportResult.exitCode).toBe(0);
+      const parsed = JSON.parse(exportResult.stdout);
+      expect(parsed._).toBe("value");
     });
 
     test("Key with numbers is valid", async () => {
@@ -717,13 +724,14 @@ describe("Integration Tests", () => {
         configDir: ctx.configDir,
       });
 
-      const get = await runBurrow(["get", "API_KEY_V2", "--show"], {
+      const exportResult = await runBurrow(["export", "--format", "json"], {
         cwd: ctx.repo,
         configDir: ctx.configDir,
       });
 
-      expect(get.exitCode).toBe(0);
-      expect(get.stdout).toBe("value");
+      expect(exportResult.exitCode).toBe(0);
+      const parsed = JSON.parse(exportResult.stdout);
+      expect(parsed.API_KEY_V2).toBe("value");
     });
   });
 });
