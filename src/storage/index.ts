@@ -1,10 +1,9 @@
-import { mkdir, rename, unlink } from "node:fs/promises";
+import { Database } from "bun:sqlite";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { randomBytes } from "node:crypto";
 import { getConfigDir } from "../platform/index.ts";
 
-const STORE_VERSION = 1;
-const DEFAULT_STORE_FILE = "store.json";
+const DEFAULT_STORE_FILE = "store.db";
 
 export interface SecretEntry {
   value: string | null;
@@ -15,28 +14,15 @@ export interface PathSecrets {
   [key: string]: SecretEntry;
 }
 
-export interface Store {
-  version: number;
-  paths: {
-    [path: string]: PathSecrets;
-  };
-}
-
 export interface StorageOptions {
   configDir?: string;
   storeFileName?: string;
 }
 
-function createEmptyStore(): Store {
-  return {
-    version: STORE_VERSION,
-    paths: {},
-  };
-}
-
 export class Storage {
   private readonly configDir: string;
   private readonly storeFileName: string;
+  private db: Database | null = null;
 
   constructor(options: StorageOptions = {}) {
     this.configDir = options.configDir ?? getConfigDir();
@@ -47,48 +33,42 @@ export class Storage {
     return join(this.configDir, this.storeFileName);
   }
 
-  async read(): Promise<Store> {
-    try {
-      const file = Bun.file(this.storePath);
-      const content = await file.text();
-      const store = JSON.parse(content) as Store;
-
-      if (store.version !== STORE_VERSION) {
-        throw new Error(
-          `Unsupported store version: ${store.version}. Expected: ${STORE_VERSION}`
-        );
-      }
-
-      return store;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        return createEmptyStore();
-      }
-      throw error;
+  private async ensureDb(): Promise<Database> {
+    if (this.db) {
+      return this.db;
     }
-  }
 
-  async write(store: Store): Promise<void> {
     await mkdir(this.configDir, { recursive: true });
 
-    const tempFileName = `.store-${randomBytes(8).toString("hex")}.tmp`;
-    const tempPath = join(this.configDir, tempFileName);
+    this.db = new Database(this.storePath);
+    this.db.run("PRAGMA journal_mode = WAL");
 
-    const content = JSON.stringify(store, null, 2);
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS secrets (
+        path TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (path, key)
+      )
+    `);
 
-    try {
-      const file = Bun.file(tempPath);
-      await Bun.write(file, content);
+    this.db.run("CREATE INDEX IF NOT EXISTS idx_secrets_path ON secrets (path)");
 
-      await rename(tempPath, this.storePath);
-    } catch (error) {
-      try {
-        await unlink(tempPath);
-      } catch {
-        // Ignore cleanup errors
-      }
-      throw error;
+    const versionResult = this.db
+      .query<{ user_version: number }, []>("PRAGMA user_version")
+      .get();
+    const currentVersion = versionResult?.user_version ?? 0;
+
+    if (currentVersion === 0) {
+      this.db.run("PRAGMA user_version = 1");
+    } else if (currentVersion !== 1) {
+      throw new Error(
+        `Unsupported store version: ${currentVersion}. Expected: 1`
+      );
     }
+
+    return this.db;
   }
 
   async setSecret(
@@ -96,44 +76,70 @@ export class Storage {
     key: string,
     value: string | null
   ): Promise<void> {
-    const store = await this.read();
+    const db = await this.ensureDb();
+    const updatedAt = new Date().toISOString();
 
-    if (!store.paths[canonicalPath]) {
-      store.paths[canonicalPath] = {};
-    }
-
-    store.paths[canonicalPath][key] = {
-      value,
-      updatedAt: new Date().toISOString(),
-    };
-
-    await this.write(store);
+    db.query(`
+      INSERT INTO secrets (path, key, value, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(path, key) DO UPDATE SET
+        value = excluded.value,
+        updated_at = excluded.updated_at
+    `).run(canonicalPath, key, value, updatedAt);
   }
 
   async getPathSecrets(canonicalPath: string): Promise<PathSecrets | undefined> {
-    const store = await this.read();
-    return store.paths[canonicalPath];
+    const db = await this.ensureDb();
+
+    const rows = db
+      .query<{ key: string; value: string | null; updated_at: string }, [string]>(
+        "SELECT key, value, updated_at FROM secrets WHERE path = ?"
+      )
+      .all(canonicalPath);
+
+    if (rows.length === 0) {
+      return undefined;
+    }
+
+    const secrets: PathSecrets = {};
+    for (const row of rows) {
+      secrets[row.key] = {
+        value: row.value,
+        updatedAt: row.updated_at,
+      };
+    }
+
+    return secrets;
   }
 
   async getAllPaths(): Promise<string[]> {
-    const store = await this.read();
-    return Object.keys(store.paths);
+    const db = await this.ensureDb();
+
+    const rows = db
+      .query<{ path: string }, []>("SELECT DISTINCT path FROM secrets")
+      .all();
+
+    return rows.map((row) => row.path);
   }
 
   async removeKey(canonicalPath: string, key: string): Promise<boolean> {
-    const store = await this.read();
+    const db = await this.ensureDb();
 
-    if (!store.paths[canonicalPath]?.[key]) {
+    const existing = db
+      .query<{ path: string }, [string, string]>(
+        "SELECT path FROM secrets WHERE path = ? AND key = ?"
+      )
+      .get(canonicalPath, key);
+
+    if (!existing) {
       return false;
     }
 
-    delete store.paths[canonicalPath][key];
+    db.query("DELETE FROM secrets WHERE path = ? AND key = ?").run(
+      canonicalPath,
+      key
+    );
 
-    if (Object.keys(store.paths[canonicalPath]).length === 0) {
-      delete store.paths[canonicalPath];
-    }
-
-    await this.write(store);
     return true;
   }
 }

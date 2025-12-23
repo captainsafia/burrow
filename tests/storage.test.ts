@@ -1,5 +1,7 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { mkdir, rm, readFile, writeFile } from "node:fs/promises";
+import { Database } from "bun:sqlite";
+import { mkdir, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Storage } from "../src/storage/index.ts";
@@ -18,64 +20,44 @@ describe("Storage", () => {
     await rm(testDir, { recursive: true, force: true });
   });
 
-  describe("read", () => {
-    test("returns empty store when file does not exist", async () => {
-      const store = await storage.read();
-      expect(store.version).toBe(1);
-      expect(store.paths).toEqual({});
+  describe("initialization", () => {
+    test("creates database when first operation is performed", async () => {
+      await storage.setSecret("/test", "KEY", "value");
+      expect(existsSync(join(testDir, "store.db"))).toBe(true);
     });
 
-    test("reads existing store file", async () => {
-      const existingStore = {
-        version: 1,
-        paths: {
-          "/test/path": {
-            MY_KEY: { value: "my_value", updatedAt: "2025-01-01T00:00:00.000Z" },
-          },
-        },
-      };
-      await writeFile(
-        join(testDir, "store.json"),
-        JSON.stringify(existingStore)
-      );
-
-      const store = await storage.read();
-      expect(store).toEqual(existingStore);
-    });
-
-    test("throws on unsupported version", async () => {
-      const badStore = { version: 999, paths: {} };
-      await writeFile(join(testDir, "store.json"), JSON.stringify(badStore));
-
-      await expect(storage.read()).rejects.toThrow("Unsupported store version");
-    });
-  });
-
-  describe("write", () => {
     test("creates config directory if it does not exist", async () => {
       const nestedDir = join(testDir, "nested", "config");
       const nestedStorage = new Storage({ configDir: nestedDir });
 
-      await nestedStorage.write({ version: 1, paths: {} });
+      await nestedStorage.setSecret("/test", "KEY", "value");
 
-      const content = await readFile(join(nestedDir, "store.json"), "utf-8");
-      expect(JSON.parse(content)).toEqual({ version: 1, paths: {} });
+      expect(existsSync(join(nestedDir, "store.db"))).toBe(true);
     });
 
-    test("writes store atomically", async () => {
-      const store = {
-        version: 1,
-        paths: {
-          "/test": {
-            KEY: { value: "value", updatedAt: "2025-01-01T00:00:00.000Z" },
-          },
-        },
-      };
+    test("reads existing database", async () => {
+      const db = new Database(join(testDir, "store.db"));
+      db.run("PRAGMA user_version = 1");
+      db.run(`
+        CREATE TABLE secrets (path TEXT NOT NULL, key TEXT NOT NULL, value TEXT, updated_at TEXT NOT NULL, PRIMARY KEY (path, key))
+      `);
+      db.run("INSERT INTO secrets (path, key, value, updated_at) VALUES ('/test/path', 'MY_KEY', 'my_value', '2025-01-01T00:00:00.000Z')");
+      db.close();
 
-      await storage.write(store);
+      const secrets = await storage.getPathSecrets("/test/path");
+      expect(secrets?.["MY_KEY"]?.value).toBe("my_value");
+      expect(secrets?.["MY_KEY"]?.updatedAt).toBe("2025-01-01T00:00:00.000Z");
+    });
 
-      const content = await readFile(join(testDir, "store.json"), "utf-8");
-      expect(JSON.parse(content)).toEqual(store);
+    test("throws on unsupported version", async () => {
+      const db = new Database(join(testDir, "store.db"));
+      db.run("PRAGMA user_version = 999");
+      db.run(`
+        CREATE TABLE secrets (path TEXT NOT NULL, key TEXT NOT NULL, value TEXT, updated_at TEXT NOT NULL, PRIMARY KEY (path, key))
+      `);
+      db.close();
+
+      await expect(storage.getAllPaths()).rejects.toThrow("Unsupported store version");
     });
   });
 
@@ -83,24 +65,23 @@ describe("Storage", () => {
     test("creates new path entry if missing", async () => {
       await storage.setSecret("/new/path", "MY_KEY", "my_value");
 
-      const store = await storage.read();
-      expect(store.paths["/new/path"]).toBeDefined();
-      expect(store.paths["/new/path"]?.["MY_KEY"]?.value).toBe("my_value");
+      const secrets = await storage.getPathSecrets("/new/path");
+      expect(secrets?.["MY_KEY"]?.value).toBe("my_value");
     });
 
     test("overwrites existing value at same path", async () => {
       await storage.setSecret("/test", "KEY", "value1");
       await storage.setSecret("/test", "KEY", "value2");
 
-      const store = await storage.read();
-      expect(store.paths["/test"]?.["KEY"]?.value).toBe("value2");
+      const secrets = await storage.getPathSecrets("/test");
+      expect(secrets?.["KEY"]?.value).toBe("value2");
     });
 
     test("stores tombstone when value is null", async () => {
       await storage.setSecret("/test", "KEY", null);
 
-      const store = await storage.read();
-      expect(store.paths["/test"]?.["KEY"]?.value).toBeNull();
+      const secrets = await storage.getPathSecrets("/test");
+      expect(secrets?.["KEY"]?.value).toBeNull();
     });
 
     test("sets updatedAt timestamp", async () => {
@@ -108,8 +89,8 @@ describe("Storage", () => {
       await storage.setSecret("/test", "KEY", "value");
       const after = new Date().toISOString();
 
-      const store = await storage.read();
-      const updatedAt = store.paths["/test"]?.["KEY"]?.updatedAt;
+      const secrets = await storage.getPathSecrets("/test");
+      const updatedAt = secrets?.["KEY"]?.updatedAt;
       expect(updatedAt).toBeDefined();
       expect(updatedAt! >= before).toBe(true);
       expect(updatedAt! <= after).toBe(true);

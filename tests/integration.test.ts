@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { mkdir, rm, readFile, symlink } from "node:fs/promises";
+import { mkdir, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { $ } from "bun";
@@ -516,17 +516,17 @@ describe("Integration Tests", () => {
   });
 
   describe("Concurrency / robustness", () => {
-    test("22. Store file is valid JSON after set", async () => {
+    test("22. Store file is valid SQLite after set", async () => {
       await runBurrow(["set", "KEY=value"], {
         cwd: ctx.repo,
         configDir: ctx.configDir,
       });
 
-      const storeContent = await readFile(
-        join(ctx.configDir, "store.json"),
-        "utf-8"
-      );
-      expect(() => JSON.parse(storeContent)).not.toThrow();
+      const { Database } = await import("bun:sqlite");
+      const db = new Database(join(ctx.configDir, "store.db"));
+      const version = db.query("PRAGMA user_version").get() as { user_version: number };
+      expect(version.user_version).toBe(1);
+      db.close();
     });
 
     test("23. Repeated sets don't corrupt store", async () => {
@@ -537,12 +537,11 @@ describe("Integration Tests", () => {
         });
       }
 
-      const storeContent = await readFile(
-        join(ctx.configDir, "store.json"),
-        "utf-8"
-      );
-      const store = JSON.parse(storeContent);
-      expect(store.version).toBe(1);
+      const { Database } = await import("bun:sqlite");
+      const db = new Database(join(ctx.configDir, "store.db"));
+      const version = db.query("PRAGMA user_version").get() as { user_version: number };
+      expect(version.user_version).toBe(1);
+      db.close();
 
       const get = await runBurrow(["get", "KEY"], {
         cwd: ctx.repo,
@@ -631,11 +630,11 @@ describe("Integration Tests", () => {
         configDir: ctx.configDir,
       });
 
-      const storeContent = await readFile(
-        join(ctx.configDir, "store.json"),
-        "utf-8"
-      );
-      expect(storeContent).toContain("ISOLATED");
+      const { Database } = await import("bun:sqlite");
+      const db = new Database(join(ctx.configDir, "store.db"));
+      const row = db.query("SELECT key FROM secrets WHERE key = 'ISOLATED'").get() as { key: string } | null;
+      expect(row?.key).toBe("ISOLATED");
+      db.close();
 
       const altConfigDir = join(ctx.workspaceDir, "alt-config");
       await mkdir(altConfigDir, { recursive: true });
