@@ -1,5 +1,5 @@
-import { mkdir, rename, writeFile, readFile, unlink } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { mkdir, rename, unlink } from "node:fs/promises";
+import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { getConfigDir } from "../platform/index.ts";
 
@@ -49,7 +49,8 @@ export class Storage {
 
   async read(): Promise<Store> {
     try {
-      const content = await readFile(this.storePath, "utf-8");
+      const file = Bun.file(this.storePath);
+      const content = await file.text();
       const store = JSON.parse(content) as Store;
 
       if (store.version !== STORE_VERSION) {
