@@ -158,8 +158,7 @@ export class BurrowClient {
       storeFileName: options.storeFileName,
     });
     this.resolver = new Resolver({
-      configDir: options.configDir,
-      storeFileName: options.storeFileName,
+      storage: this.storage,
       followSymlinks: options.followSymlinks,
     });
     this.pathOptions = {

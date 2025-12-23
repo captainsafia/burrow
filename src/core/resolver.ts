@@ -1,5 +1,5 @@
-import { Storage, type PathSecrets } from "../storage/index.ts";
-import { canonicalize, getAncestors, isAncestorOf, type PathOptions } from "./path.ts";
+import { type Storage } from "../storage/index.ts";
+import { canonicalize, isAncestorOf, type PathOptions } from "./path.ts";
 import { isWindows } from "../platform/index.ts";
 
 export interface ResolvedSecret {
@@ -9,19 +9,15 @@ export interface ResolvedSecret {
 }
 
 export interface ResolverOptions extends PathOptions {
-  configDir?: string;
-  storeFileName?: string;
+  storage: Storage;
 }
 
 export class Resolver {
   private readonly storage: Storage;
   private readonly pathOptions: PathOptions;
 
-  constructor(options: ResolverOptions = {}) {
-    this.storage = new Storage({
-      configDir: options.configDir,
-      storeFileName: options.storeFileName,
-    });
+  constructor(options: ResolverOptions) {
+    this.storage = options.storage;
     this.pathOptions = {
       followSymlinks: options.followSymlinks,
     };

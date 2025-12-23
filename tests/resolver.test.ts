@@ -18,7 +18,7 @@ describe("Resolver", () => {
     await mkdir(join(testDir, "projects", "myapp", "src"), { recursive: true });
 
     storage = new Storage({ configDir });
-    resolver = new Resolver({ configDir });
+    resolver = new Resolver({ storage });
   });
 
   afterEach(async () => {
