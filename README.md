@@ -30,7 +30,7 @@ burrow set DATABASE_URL=postgres://localhost/mydb --path ~/projects
 ### Get a secret
 
 ```bash
-burrow get API_KEY --show
+burrow get API_KEY
 burrow get API_KEY --format json
 ```
 
@@ -84,13 +84,26 @@ import { BurrowClient } from '@captainsafia/burrow';
 
 const client = new BurrowClient();
 
-await client.set('API_KEY', 'secret123', { path: '/my/project' });
+try {
+  await client.set('API_KEY', 'secret123', { path: '/my/project' });
 
-const secret = await client.get('API_KEY', { cwd: '/my/project/subdir' });
-console.log(secret?.value); // 'secret123'
-console.log(secret?.sourcePath); // '/my/project'
+  const secret = await client.get('API_KEY', { cwd: '/my/project/subdir' });
+  console.log(secret?.value); // 'secret123'
+  console.log(secret?.sourcePath); // '/my/project'
 
-const allSecrets = await client.list({ cwd: '/my/project' });
+  const allSecrets = await client.list({ cwd: '/my/project' });
+} finally {
+  client.close(); // Clean up database connection
+}
+```
+
+Or with TypeScript's `using` declarations for automatic cleanup:
+
+```typescript
+{
+  using client = new BurrowClient();
+  await client.set('API_KEY', 'secret123');
+} // Automatically cleaned up
 ```
 
 ## Contributing

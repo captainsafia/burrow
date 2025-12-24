@@ -28,7 +28,7 @@ export interface BurrowClientOptions {
 
   /**
    * Custom filename for the secrets store.
-   * Defaults to `store.json`.
+   * Defaults to `store.db`.
    */
   storeFileName?: string;
 
@@ -116,11 +116,6 @@ export interface ExportOptions {
   format?: ExportFormat;
 
   /**
-   * Whether to show actual values (currently unused, reserved for future use).
-   */
-  showValues?: boolean;
-
-  /**
    * Whether to include source paths in JSON output.
    * When true, JSON output includes `{ key: { value, sourcePath } }` format.
    * Only applies when format is `json`.
@@ -183,7 +178,7 @@ export class BurrowClient {
    * The secret will be available to the specified directory and all its
    * subdirectories, unless overridden or blocked at a deeper level.
    *
-   * @param key - Environment variable name. Must match `^[A-Z_][A-Z0-9_]*$`
+   * @param key - Environment variable name. Must match `^[A-Za-z_][A-Za-z0-9_]*$`
    * @param value - Secret value to store
    * @param options - Set options including target path
    * @throws Error if the key format is invalid
@@ -261,7 +256,7 @@ export class BurrowClient {
    *
    * A blocked key can be re-enabled by calling `set` at the same or deeper path.
    *
-   * @param key - Environment variable name to block. Must match `^[A-Z_][A-Z0-9_]*$`
+   * @param key - Environment variable name to block. Must match `^[A-Za-z_][A-Za-z0-9_]*$`
    * @param options - Block options including target path
    * @throws Error if the key format is invalid
    *
@@ -294,7 +289,7 @@ export class BurrowClient {
    * `remove` completely deletes the secret entry. After removal, the key
    * may still be inherited from parent directories if defined there.
    *
-   * @param key - Environment variable name to remove. Must match `^[A-Z_][A-Z0-9_]*$`
+   * @param key - Environment variable name to remove. Must match `^[A-Za-z_][A-Za-z0-9_]*$`
    * @param options - Remove options including target path
    * @returns true if the secret was found and removed, false if it didn't exist
    * @throws Error if the key format is invalid

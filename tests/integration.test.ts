@@ -415,7 +415,7 @@ describe("Integration Tests", () => {
 
       const lines = exportResult.stdout.split("\n").filter(Boolean);
       for (const line of lines) {
-        expect(line).toMatch(/^export [A-Z_][A-Z0-9_]*='.*'$/);
+        expect(line).toMatch(/^export [A-Za-z_][A-Za-z0-9_]*='.*'$/);
       }
     });
 

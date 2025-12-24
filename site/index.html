@@ -448,16 +448,20 @@
 
 const client = new BurrowClient();
 
-// Set a secret
-await client.set('API_KEY', 'secret123', { path: '/my/project' });
+try {
+  // Set a secret
+  await client.set('API_KEY', 'secret123', { path: '/my/project' });
 
-// Get a secret (resolved through ancestry)
-const secret = await client.get('API_KEY', { cwd: '/my/project/subdir' });
-console.log(secret?.value);       // 'secret123'
-console.log(secret?.sourcePath);  // '/my/project'
+  // Get a secret (resolved through ancestry)
+  const secret = await client.get('API_KEY', { cwd: '/my/project/subdir' });
+  console.log(secret?.value);       // 'secret123'
+  console.log(secret?.sourcePath);  // '/my/project'
 
-// List all secrets
-const allSecrets = await client.list({ cwd: '/my/project' });</code></pre>
+  // List all secrets
+  const allSecrets = await client.list({ cwd: '/my/project' });
+} finally {
+  client.close(); // Clean up database connection
+}</code></pre>
         </section>
 
         <footer>
