@@ -103,7 +103,13 @@ jobs:
             | macOS ARM64 | [burrow-darwin-arm64](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
             | Windows x64 | [burrow-windows-x64.exe](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
 
-            Download artifacts from the [Actions run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+            ### Quick Install (Linux/macOS)
+
+            \`\`\`bash
+            curl -fsSL https://safia.rocks/burrow/install.sh | sh -s -- --pr ${{ github.event.pull_request.number }}
+            \`\`\`
+
+            Or download artifacts manually from the [Actions run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
             `;
 
             const { data: comments } = await github.rest.issues.listComments({

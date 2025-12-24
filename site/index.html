@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>burrow - directory-scoped secrets manager</title>
+    <meta name="description" content="A platform-agnostic, directory-scoped secrets manager. Store secrets outside your repos, inherit them through directory ancestry.">
+
+    <!-- Open Graph / Social Media Meta Tags -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://safia.rocks/burrow/">
+    <meta property="og:title" content="burrow - directory-scoped secrets manager">
+    <meta property="og:description" content="A platform-agnostic, directory-scoped secrets manager. Store secrets outside your repos, inherit them through directory ancestry.">
+
+    <!-- Twitter Card Meta Tags -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="burrow - directory-scoped secrets manager">
+    <meta name="twitter:description" content="A platform-agnostic, directory-scoped secrets manager. Store secrets outside your repos, inherit them through directory ancestry.">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #1f2937;
+            background: #ffffff;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+        
+        header {
+            border-bottom: 1px solid #e5e7eb;
+            padding: 20px 0;
+            margin-bottom: 60px;
+        }
+        
+        .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+            color: #1f2937;
+        }
+        
+        .logo h1 {
+            font-size: 24px;
+            font-weight: 600;
+            color: #92400e;
+        }
+        
+        .header-links {
+            display: flex;
+            gap: 24px;
+        }
+        
+        .header-links a {
+            color: #4b5563;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        
+        .header-links a:hover {
+            color: #92400e;
+        }
+        
+        .hero {
+            margin-bottom: 80px;
+        }
+        
+        .hero h2 {
+            font-size: 48px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #111827;
+        }
+        
+        .hero p {
+            font-size: 20px;
+            color: #6b7280;
+            margin-bottom: 32px;
+        }
+        
+        .install-cmd {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 16px;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 14px;
+            color: #92400e;
+            margin-bottom: 16px;
+            overflow-x: auto;
+            text-align: center;
+        }
+
+        .install-cmd code {
+            background: none;
+            border: none;
+            padding: 0;
+        }
+        
+        section {
+            margin-bottom: 80px;
+        }
+        
+        h3 {
+            font-size: 32px;
+            font-weight: 600;
+            margin-bottom: 24px;
+            color: #111827;
+        }
+        
+        h4 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-top: 32px;
+            margin-bottom: 12px;
+            color: #78350f;
+        }
+        
+        p {
+            margin-bottom: 16px;
+            color: #4b5563;
+        }
+        
+        code {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 3px;
+            padding: 2px 6px;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 14px;
+            color: #92400e;
+        }
+        
+        pre {
+            background: #1f2937;
+            border-radius: 6px;
+            padding: 16px;
+            margin: 16px 0 24px 0;
+            overflow-x: auto;
+        }
+        
+        pre code {
+            background: none;
+            border: none;
+            color: #d1d5db;
+            padding: 0;
+        }
+        
+        .command-group {
+            margin-bottom: 32px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 24px 0;
+            font-size: 14px;
+        }
+        
+        th {
+            text-align: left;
+            padding: 12px;
+            background: #f9fafb;
+            border-bottom: 2px solid #e5e7eb;
+            font-weight: 600;
+            color: #92400e;
+        }
+        
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        td:first-child {
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 13px;
+            color: #92400e;
+        }
+        
+        footer {
+            border-top: 1px solid #e5e7eb;
+            padding: 40px 0;
+            margin-top: 80px;
+            text-align: center;
+            color: #6b7280;
+            font-size: 14px;
+        }
+        
+        footer a {
+            color: #92400e;
+            text-decoration: none;
+        }
+        
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Concept diagram */
+        .concept-diagram {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 24px;
+            margin: 24px 0;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            color: #4b5563;
+        }
+
+        .concept-diagram .path {
+            color: #92400e;
+        }
+
+        .concept-diagram .comment {
+            color: #9ca3af;
+        }
+
+        @media (max-width: 640px) {
+            .hero h2 {
+                font-size: 28px;
+            }
+
+            .hero p {
+                font-size: 16px;
+            }
+
+            .header-content {
+                flex-direction: column;
+                gap: 16px;
+                align-items: flex-start;
+            }
+
+            h3 {
+                font-size: 24px;
+            }
+
+            h4 {
+                font-size: 18px;
+            }
+
+            pre {
+                padding: 12px;
+                font-size: 12px;
+            }
+
+            table {
+                font-size: 12px;
+            }
+
+            th, td {
+                padding: 8px;
+            }
+
+            td:first-child {
+                font-size: 11px;
+            }
+
+            .command-group {
+                margin-bottom: 24px;
+            }
+
+            section {
+                margin-bottom: 48px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 0 16px;
+            }
+
+            .hero h2 {
+                font-size: 24px;
+            }
+
+            .header-links {
+                gap: 16px;
+            }
+
+            header {
+                margin-bottom: 32px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-content">
+                <a href="#" class="logo">
+                    <h1>burrow</h1>
+                </a>
+                <div class="header-links">
+                    <a href="https://github.com/captainsafia/burrow">GitHub</a>
+                    <a href="https://github.com/captainsafia/burrow/releases">Releases</a>
+                </div>
+            </div>
+        </header>
+
+        <section class="hero">
+            <div class="hero-text">
+                <h2>Directory-scoped secrets manager</h2>
+                <p>Store secrets outside your repos, inherit them through directory ancestry.</p>
+            </div>
+
+            <div class="install-cmd">
+                <code>curl -fsSL https://safia.rocks/burrow/install.sh | sh</code>
+            </div>
+
+        </section>
+
+        <section>
+            <h3>How It Works</h3>
+            
+            <p>Burrow stores secrets in your user profile directory, outside of any repository. When you request secrets for a directory, burrow finds all ancestor paths with stored secrets and merges them from shallowest to deepest.</p>
+
+            <div class="concept-diagram">
+                <span class="path">~/projects/</span>                     <span class="comment"># DATABASE_URL, API_KEY defined here</span><br>
+                <span class="path">├── app-a/</span>                      <span class="comment"># inherits both secrets</span><br>
+                <span class="path">├── app-b/</span>                      <span class="comment"># inherits both, overrides API_KEY</span><br>
+                <span class="path">│   └── tests/</span>                  <span class="comment"># blocks API_KEY (uses none)</span><br>
+                <span class="path">└── app-c/</span>                      <span class="comment"># inherits both secrets</span>
+            </div>
+
+            <p><strong>Secrets are stored in:</strong></p>
+            <ul style="margin-left: 24px; margin-bottom: 16px; color: #4b5563;">
+                <li><strong>Linux/macOS:</strong> <code>$XDG_CONFIG_HOME/burrow</code> or <code>~/.config/burrow</code></li>
+                <li><strong>Windows:</strong> <code>%APPDATA%\burrow</code></li>
+            </ul>
+        </section>
+
+        <section>
+            <h3>Usage</h3>
+            
+            <div class="command-group">
+                <h4>Set a secret</h4>
+                <p>Set a secret for the current directory:</p>
+                <pre><code>burrow set API_KEY=sk-live-abc123</code></pre>
+                <p>Set a secret for a specific path:</p>
+                <pre><code>burrow set DATABASE_URL=postgres://localhost/mydb --path ~/projects</code></pre>
+            </div>
+
+            <div class="command-group">
+                <h4>Get a secret</h4>
+                <p>Get a secret value (resolved from directory ancestry):</p>
+                <pre><code>burrow get API_KEY</code></pre>
+                <p>Get with JSON output:</p>
+                <pre><code>burrow get API_KEY --format json</code></pre>
+            </div>
+
+            <div class="command-group">
+                <h4>List all secrets</h4>
+                <p>List all resolved secrets for the current directory:</p>
+                <pre><code>burrow list</code></pre>
+                <p>Output as JSON:</p>
+                <pre><code>burrow list --format json</code></pre>
+            </div>
+
+            <div class="command-group">
+                <h4>Export to shell</h4>
+                <p>Export secrets as environment variables:</p>
+                <pre><code>eval "$(burrow export)"</code></pre>
+                <p>Use with a command:</p>
+                <pre><code>eval "$(burrow export)" && npm start</code></pre>
+            </div>
+
+            <div class="command-group">
+                <h4>Block inheritance</h4>
+                <p>Remove a secret from a specific path (blocks inheritance):</p>
+                <pre><code>burrow unset API_KEY --path ~/projects/app/tests</code></pre>
+            </div>
+        </section>
+
+        <section>
+            <h3>Commands</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Command</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>burrow set &lt;key=value&gt;</td>
+                        <td>Set a secret at the given path</td>
+                    </tr>
+                    <tr>
+                        <td>burrow get &lt;key&gt;</td>
+                        <td>Get a secret resolved from cwd ancestry</td>
+                    </tr>
+                    <tr>
+                        <td>burrow list</td>
+                        <td>List all resolved secrets for cwd</td>
+                    </tr>
+                    <tr>
+                        <td>burrow export</td>
+                        <td>Export secrets as shell environment variables</td>
+                    </tr>
+                    <tr>
+                        <td>burrow unset &lt;key&gt;</td>
+                        <td>Remove or block a secret at the given path</td>
+                    </tr>
+                    <tr>
+                        <td>burrow version</td>
+                        <td>Show version information</td>
+                    </tr>
+                    <tr>
+                        <td>burrow help [command]</td>
+                        <td>Show help information</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section>
+            <h3>Library Usage</h3>
+            <p>Burrow also works as a TypeScript/JavaScript library:</p>
+            <pre><code>import { BurrowClient } from '@captainsafia/burrow';
+
+const client = new BurrowClient();
+
+// Set a secret
+await client.set('API_KEY', 'secret123', { path: '/my/project' });
+
+// Get a secret (resolved through ancestry)
+const secret = await client.get('API_KEY', { cwd: '/my/project/subdir' });
+console.log(secret?.value);       // 'secret123'
+console.log(secret?.sourcePath);  // '/my/project'
+
+// List all secrets
+const allSecrets = await client.list({ cwd: '/my/project' });</code></pre>
+        </section>
+
+        <footer>
+            <p>
+                Created by <a href="https://safia.rocks">@captainsafia</a> ·
+                <a href="https://github.com/captainsafia/burrow">GitHub</a> ·
+                Licensed under MIT
+            </p>
+        </footer>
+    </div>
+</body>
+</html>
