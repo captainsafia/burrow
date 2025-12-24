@@ -251,4 +251,32 @@ describe("BurrowClient", () => {
       expect(resolved.get("KEY2")?.value).toBe("value2");
     });
   });
+
+  describe("close", () => {
+    test("closes the client and releases resources", async () => {
+      await client.set("KEY", "value", { path: testDir });
+      client.close();
+      // Should not throw
+    });
+
+    test("is safe to call multiple times", async () => {
+      await client.set("KEY", "value", { path: testDir });
+      client.close();
+      client.close(); // Should not throw
+    });
+
+    test("works with Symbol.dispose", async () => {
+      {
+        using disposableClient = new BurrowClient({ configDir: testDir });
+        await disposableClient.set("DISPOSE_KEY", "disposed-value", { path: testDir });
+      }
+      // After the block, client should be closed via Symbol.dispose
+
+      // Create new client to verify data was written
+      const newClient = new BurrowClient({ configDir: testDir });
+      const secret = await newClient.get("DISPOSE_KEY", { cwd: testDir });
+      expect(secret?.value).toBe("disposed-value");
+      newClient.close();
+    });
+  });
 });

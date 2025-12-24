@@ -129,6 +129,54 @@ describe("Storage", () => {
     });
   });
 
+  describe("getAncestorPaths", () => {
+    test("returns empty array when no paths exist", async () => {
+      const paths = await storage.getAncestorPaths("/home/user/project");
+      expect(paths).toEqual([]);
+    });
+
+    test("returns exact path match", async () => {
+      await storage.setSecret("/home/user/project", "KEY", "value");
+
+      const paths = await storage.getAncestorPaths("/home/user/project");
+      expect(paths).toEqual(["/home/user/project"]);
+    });
+
+    test("returns ancestor paths", async () => {
+      await storage.setSecret("/home", "KEY", "value");
+      await storage.setSecret("/home/user", "KEY", "value");
+      await storage.setSecret("/home/user/project", "KEY", "value");
+
+      const paths = await storage.getAncestorPaths("/home/user/project/src");
+      expect(paths.sort()).toEqual(["/home", "/home/user", "/home/user/project"]);
+    });
+
+    test("does not return paths that are not ancestors", async () => {
+      await storage.setSecret("/home/user/project", "KEY", "value");
+      await storage.setSecret("/home/other", "KEY", "value");
+      await storage.setSecret("/var/log", "KEY", "value");
+
+      const paths = await storage.getAncestorPaths("/home/user/project/src");
+      expect(paths).toEqual(["/home/user/project"]);
+    });
+
+    test("does not return partial path matches", async () => {
+      await storage.setSecret("/home/user", "KEY", "value");
+      await storage.setSecret("/home/username", "KEY", "value");
+
+      const paths = await storage.getAncestorPaths("/home/user/project");
+      expect(paths).toEqual(["/home/user"]);
+    });
+
+    test("returns root path as ancestor", async () => {
+      await storage.setSecret("/", "KEY", "value");
+      await storage.setSecret("/home", "KEY", "value");
+
+      const paths = await storage.getAncestorPaths("/home/user");
+      expect(paths.sort()).toEqual(["/", "/home"]);
+    });
+  });
+
   describe("removeKey", () => {
     test("returns false when path does not exist", async () => {
       const result = await storage.removeKey("/nonexistent", "KEY");
@@ -156,6 +204,45 @@ describe("Storage", () => {
 
       const paths = await storage.getAllPaths();
       expect(paths).not.toContain("/test");
+    });
+  });
+
+  describe("close", () => {
+    test("closes the database connection", async () => {
+      await storage.setSecret("/test", "KEY", "value");
+      storage.close();
+
+      // Database file should still exist
+      expect(existsSync(join(testDir, "store.db"))).toBe(true);
+    });
+
+    test("is safe to call multiple times", async () => {
+      await storage.setSecret("/test", "KEY", "value");
+      storage.close();
+      storage.close(); // Should not throw
+    });
+
+    test("allows reinitialization after close", async () => {
+      await storage.setSecret("/test", "KEY", "value");
+      storage.close();
+
+      // Should reinitialize and work again
+      const secrets = await storage.getPathSecrets("/test");
+      expect(secrets?.["KEY"]?.value).toBe("value");
+    });
+
+    test("works with Symbol.dispose", async () => {
+      {
+        using disposableStorage = new Storage({ configDir: testDir });
+        await disposableStorage.setSecret("/test", "DISPOSE_KEY", "disposed-value");
+      }
+      // After the block, storage should be closed via Symbol.dispose
+
+      // Create new storage to verify data was written
+      const newStorage = new Storage({ configDir: testDir });
+      const secrets = await newStorage.getPathSecrets("/test");
+      expect(secrets?.["DISPOSE_KEY"]?.value).toBe("disposed-value");
+      newStorage.close();
     });
   });
 });

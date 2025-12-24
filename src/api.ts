@@ -383,6 +383,42 @@ export class BurrowClient {
   async resolve(cwd?: string): Promise<Map<string, ResolvedSecret>> {
     return this.resolver.resolve(cwd);
   }
+
+  /**
+   * Closes the database connection and releases resources.
+   * After calling this method, the client instance should not be used.
+   *
+   * This method is safe to call multiple times.
+   *
+   * @example
+   * ```typescript
+   * const client = new BurrowClient();
+   * try {
+   *   await client.set('API_KEY', 'value');
+   *   // ... do work
+   * } finally {
+   *   client.close();
+   * }
+   * ```
+   */
+  close(): void {
+    this.storage.close();
+  }
+
+  /**
+   * Allows using the BurrowClient with `using` declarations for automatic cleanup.
+   *
+   * @example
+   * ```typescript
+   * {
+   *   using client = new BurrowClient();
+   *   await client.set('API_KEY', 'value');
+   * } // client.close() is called automatically
+   * ```
+   */
+  [Symbol.dispose](): void {
+    this.close();
+  }
 }
 
 /**

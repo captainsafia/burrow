@@ -133,6 +133,34 @@ export class Storage {
     return rows.map((row) => row.path);
   }
 
+  /**
+   * Returns all stored paths that are ancestors of (or equal to) the given canonical path.
+   * This uses SQL prefix matching for efficient database-level filtering.
+   *
+   * A path P is considered an ancestor of C if:
+   * - P equals C (same directory), or
+   * - C starts with P followed by a path separator
+   *
+   * @param canonicalPath - The canonical path to find ancestors for
+   * @returns Array of ancestor paths (unsorted)
+   */
+  async getAncestorPaths(canonicalPath: string): Promise<string[]> {
+    const db = await this.ensureDb();
+
+    // Match paths where:
+    // 1. The stored path equals the canonical path exactly, OR
+    // 2. The canonical path starts with the stored path followed by '/'
+    // 3. The stored path is the root '/' (special case since '/' + '/' would be '//')
+    // This prevents partial matches like /home/user matching /home/username
+    const rows = db
+      .query<{ path: string }, [string, string]>(
+        "SELECT DISTINCT path FROM secrets WHERE ? = path OR ? LIKE path || '/' || '%' OR path = '/'"
+      )
+      .all(canonicalPath, canonicalPath);
+
+    return rows.map((row) => row.path);
+  }
+
   async removeKey(canonicalPath: string, key: string): Promise<boolean> {
     const db = await this.ensureDb();
 
@@ -152,5 +180,33 @@ export class Storage {
     );
 
     return true;
+  }
+
+  /**
+   * Closes the database connection and releases resources.
+   * After calling this method, the Storage instance should not be used.
+   * 
+   * This method is safe to call multiple times.
+   */
+  close(): void {
+    if (this.db) {
+      this.db.close();
+      this.db = null;
+    }
+  }
+
+  /**
+   * Allows using the Storage instance with `using` declarations for automatic cleanup.
+   * 
+   * @example
+   * ```typescript
+   * {
+   *   using storage = new Storage();
+   *   await storage.setSecret('/path', 'KEY', 'value');
+   * } // storage.close() is called automatically
+   * ```
+   */
+  [Symbol.dispose](): void {
+    this.close();
   }
 }

@@ -1,5 +1,5 @@
 import { type Storage } from "../storage/index.ts";
-import { canonicalize, isAncestorOf, type PathOptions } from "./path.ts";
+import { canonicalize, type PathOptions } from "./path.ts";
 import { isWindows } from "../platform/index.ts";
 
 export interface ResolvedSecret {
@@ -27,11 +27,7 @@ export class Resolver {
     const workingDir = cwd ?? process.cwd();
     const canonicalCwd = await canonicalize(workingDir, this.pathOptions);
 
-    const allPaths = await this.storage.getAllPaths();
-
-    const ancestorPaths = allPaths.filter((storedPath) =>
-      isAncestorOf(storedPath, canonicalCwd)
-    );
+    const ancestorPaths = await this.storage.getAncestorPaths(canonicalCwd);
 
     ancestorPaths.sort((a, b) => {
       if (isWindows()) {
