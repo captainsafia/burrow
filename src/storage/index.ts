@@ -1,7 +1,8 @@
 import { Database } from "bun:sqlite";
-import { mkdir } from "node:fs/promises";
+import { chmod, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { getConfigDir } from "../platform/index.ts";
+import { isWindows } from "../platform/index.ts";
 
 const DEFAULT_STORE_FILE = "store.db";
 
@@ -40,8 +41,18 @@ export class Storage {
 
     await mkdir(this.configDir, { recursive: true });
 
+    // Set restrictive permissions on config directory (Unix only)
+    if (!isWindows()) {
+      await chmod(this.configDir, 0o700);
+    }
+
     this.db = new Database(this.storePath);
     this.db.run("PRAGMA journal_mode = WAL");
+
+    // Set restrictive permissions on database file (Unix only)
+    if (!isWindows()) {
+      await chmod(this.storePath, 0o600);
+    }
 
     this.db.run(`
       CREATE TABLE IF NOT EXISTS secrets (
