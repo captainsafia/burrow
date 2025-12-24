@@ -705,14 +705,21 @@ describe("Integration Tests", () => {
       expect(result.stderr).toContain("Invalid");
     });
 
-    test("24. Invalid key names rejected - lowercase", async () => {
-      const result = await runBurrow(["set", "lowercase=value"], {
+    test("24. Lowercase key names are accepted", async () => {
+      const result = await runBurrow(["set", "lowercase_key=value"], {
         cwd: ctx.repo,
         configDir: ctx.configDir,
       });
 
-      expect(result.exitCode).not.toBe(0);
-      expect(result.stderr).toContain("Invalid");
+      expect(result.exitCode).toBe(0);
+
+      // Verify the value was stored
+      const getResult = await runBurrow(["get", "lowercase_key"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(getResult.exitCode).toBe(0);
+      expect(getResult.stdout.trim()).toBe("value");
     });
 
     test("25. Invalid KEY=VALUE syntax - no equals", async () => {

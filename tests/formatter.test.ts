@@ -36,14 +36,21 @@ describe("validateEnvKey", () => {
     expect(validateEnvKey("API_KEY_V2")).toBe(true);
   });
 
+  test("accepts lowercase keys", () => {
+    expect(validateEnvKey("my_key")).toBe(true);
+    expect(validateEnvKey("apiKey")).toBe(true);
+    expect(validateEnvKey("npm_config_registry")).toBe(true);
+  });
+
+  test("accepts mixed case keys", () => {
+    expect(validateEnvKey("MyKey")).toBe(true);
+    expect(validateEnvKey("GITHUB_sha")).toBe(true);
+    expect(validateEnvKey("NODE_env")).toBe(true);
+  });
+
   test("rejects keys starting with numbers", () => {
     expect(validateEnvKey("1KEY")).toBe(false);
     expect(validateEnvKey("123")).toBe(false);
-  });
-
-  test("rejects lowercase keys", () => {
-    expect(validateEnvKey("my_key")).toBe(false);
-    expect(validateEnvKey("MyKey")).toBe(false);
   });
 
   test("rejects keys with special characters", () => {
@@ -60,10 +67,15 @@ describe("validateEnvKey", () => {
 describe("assertValidEnvKey", () => {
   test("does not throw for valid keys", () => {
     expect(() => assertValidEnvKey("VALID_KEY")).not.toThrow();
+    expect(() => assertValidEnvKey("lowercase_key")).not.toThrow();
+    expect(() => assertValidEnvKey("mixedCase")).not.toThrow();
   });
 
   test("throws for invalid keys", () => {
-    expect(() => assertValidEnvKey("invalid")).toThrow(
+    expect(() => assertValidEnvKey("1starts_with_number")).toThrow(
+      "Invalid environment variable key"
+    );
+    expect(() => assertValidEnvKey("has-hyphen")).toThrow(
       "Invalid environment variable key"
     );
   });

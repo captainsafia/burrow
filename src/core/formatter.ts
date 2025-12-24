@@ -2,7 +2,7 @@ import type { ResolvedSecret } from "./resolver.ts";
 
 export type ExportFormat = "shell" | "dotenv" | "json";
 
-const ENV_KEY_PATTERN = /^[A-Z_][A-Z0-9_]*$/;
+const ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 export function validateEnvKey(key: string): boolean {
   return ENV_KEY_PATTERN.test(key);
