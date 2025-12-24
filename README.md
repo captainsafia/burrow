@@ -54,6 +54,14 @@ eval "$(burrow export --format shell)" && npm start
 burrow unset API_KEY --path ~/projects/app/tests
 ```
 
+### Remove a secret
+
+```bash
+burrow remove API_KEY --path ~/projects/app
+```
+
+Unlike `unset` which blocks inheritance, `remove` deletes the entry entirely, restoring inheritance from parent directories.
+
 ## How It Works
 
 Secrets are stored in your user profile:

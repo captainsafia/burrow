@@ -138,6 +138,27 @@ program
   });
 
 program
+  .command("remove")
+  .description("Remove a secret entry entirely from the given path")
+  .argument("<key>", "Secret key to remove")
+  .option("-p, --path <dir>", "Directory to remove the secret from (default: cwd)", validatePath)
+  .action(async (key: string, options: { path?: string }) => {
+    const client = new BurrowClient();
+
+    try {
+      const removed = await client.remove(key, { path: options.path });
+      if (removed) {
+        console.log(`Removed ${key} from ${options.path ?? process.cwd()}`);
+      } else {
+        console.log(`Key "${key}" not found at ${options.path ?? process.cwd()}`);
+      }
+    } catch (error) {
+      console.error(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
   .command("export")
   .description("Export resolved secrets in various formats")
   .addOption(new Option("-f, --format <format>", "Export format").choices(["shell", "dotenv", "json"]).default("shell"))

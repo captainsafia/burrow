@@ -86,6 +86,17 @@ export interface BlockOptions {
 }
 
 /**
+ * Options for the `remove` method.
+ */
+export interface RemoveOptions {
+  /**
+   * Directory path to remove the secret from.
+   * Defaults to the current working directory.
+   */
+  path?: string;
+}
+
+/**
  * Options for the `export` method.
  */
 export interface ExportOptions {
@@ -274,6 +285,41 @@ export class BurrowClient {
     const canonicalPath = await canonicalize(targetPath, this.pathOptions);
 
     await this.storage.setSecret(canonicalPath, key, null);
+  }
+
+  /**
+   * Removes a secret entry entirely from the specified path.
+   *
+   * Unlike `block`, which creates a tombstone to prevent inheritance,
+   * `remove` completely deletes the secret entry. After removal, the key
+   * may still be inherited from parent directories if defined there.
+   *
+   * @param key - Environment variable name to remove. Must match `^[A-Z_][A-Z0-9_]*$`
+   * @param options - Remove options including target path
+   * @returns true if the secret was found and removed, false if it didn't exist
+   * @throws Error if the key format is invalid
+   *
+   * @example
+   * ```typescript
+   * // Set a secret
+   * await client.set('API_KEY', 'secret', { path: '/projects/myapp' });
+   *
+   * // Remove it entirely
+   * const removed = await client.remove('API_KEY', { path: '/projects/myapp' });
+   * console.log(removed); // true
+   *
+   * // Trying to remove again returns false
+   * const removedAgain = await client.remove('API_KEY', { path: '/projects/myapp' });
+   * console.log(removedAgain); // false
+   * ```
+   */
+  async remove(key: string, options: RemoveOptions = {}): Promise<boolean> {
+    assertValidEnvKey(key);
+
+    const targetPath = options.path ?? process.cwd();
+    const canonicalPath = await canonicalize(targetPath, this.pathOptions);
+
+    return this.storage.removeKey(canonicalPath, key);
   }
 
   /**

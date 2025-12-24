@@ -384,8 +384,14 @@
 
             <div class="command-group">
                 <h4>Block inheritance</h4>
-                <p>Remove a secret from a specific path (blocks inheritance):</p>
+                <p>Block a secret from a specific path (prevents inheritance):</p>
                 <pre><code>burrow unset API_KEY --path ~/projects/app/tests</code></pre>
+            </div>
+
+            <div class="command-group">
+                <h4>Remove a secret</h4>
+                <p>Remove a secret entry entirely (restores inheritance):</p>
+                <pre><code>burrow remove API_KEY --path ~/projects/app</code></pre>
             </div>
         </section>
 
@@ -417,7 +423,11 @@
                     </tr>
                     <tr>
                         <td>burrow unset &lt;key&gt;</td>
-                        <td>Remove or block a secret at the given path</td>
+                        <td>Block a secret at the given path (prevents inheritance)</td>
+                    </tr>
+                    <tr>
+                        <td>burrow remove &lt;key&gt;</td>
+                        <td>Remove a secret entry entirely from the given path</td>
                     </tr>
                     <tr>
                         <td>burrow version</td>

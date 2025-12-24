@@ -264,6 +264,139 @@ describe("Integration Tests", () => {
     });
   });
 
+  describe("Remove semantics", () => {
+    test("Remove deletes a secret entry entirely", async () => {
+      await runBurrow(["set", "API_KEY=secret"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const remove = await runBurrow(["remove", "API_KEY"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(remove.exitCode).toBe(0);
+      expect(remove.stdout).toContain("Removed API_KEY");
+
+      const get = await runBurrow(["get", "API_KEY"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).not.toBe(0);
+      expect(get.stderr).toContain("not found");
+    });
+
+    test("Remove of non-existent key reports not found", async () => {
+      const result = await runBurrow(["remove", "NONEXISTENT"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("not found");
+    });
+
+    test("Remove restores inheritance from parent", async () => {
+      // Set at parent level
+      await runBurrow(["set", "API_KEY=parent"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      // Override at child level
+      await runBurrow(["set", "API_KEY=child"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+
+      // Verify child value takes precedence
+      let get = await runBurrow(["get", "API_KEY", "--format", "json"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+      expect(JSON.parse(get.stdout).value).toBe("child");
+
+      // Remove child override
+      await runBurrow(["remove", "API_KEY"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+
+      // Now should inherit from parent
+      get = await runBurrow(["get", "API_KEY", "--format", "json"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).toBe(0);
+      const parsed = JSON.parse(get.stdout);
+      expect(parsed.value).toBe("parent");
+      expect(parsed.sourcePath).toBe(ctx.repo);
+    });
+
+    test("Remove with --path flag works", async () => {
+      await runBurrow(["set", "KEY=value", "--path", ctx.repo], {
+        cwd: ctx.root,
+        configDir: ctx.configDir,
+      });
+
+      const remove = await runBurrow(["remove", "KEY", "--path", ctx.repo], {
+        cwd: ctx.root,
+        configDir: ctx.configDir,
+      });
+      expect(remove.exitCode).toBe(0);
+      expect(remove.stdout).toContain("Removed KEY");
+
+      const get = await runBurrow(["get", "KEY"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).not.toBe(0);
+    });
+
+    test("Remove tombstone restores inheritance", async () => {
+      // Set at parent level
+      await runBurrow(["set", "API_KEY=parent"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      // Block at child level with unset
+      await runBurrow(["unset", "API_KEY"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+
+      // Verify key is blocked
+      let get = await runBurrow(["get", "API_KEY"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).not.toBe(0);
+
+      // Remove the tombstone
+      await runBurrow(["remove", "API_KEY"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+
+      // Now should inherit from parent
+      get = await runBurrow(["get", "API_KEY", "--format", "json"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).toBe(0);
+      expect(JSON.parse(get.stdout).value).toBe("parent");
+    });
+
+    test("Remove validates key format", async () => {
+      const result = await runBurrow(["remove", "invalid-key"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain("Invalid");
+    });
+  });
+
   describe("Export format correctness", () => {
     test("11. Shell export contains only safe statements", async () => {
       await runBurrow(["set", "KEY1=value1"], {

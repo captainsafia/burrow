@@ -132,6 +132,72 @@ describe("BurrowClient", () => {
     });
   });
 
+  describe("remove", () => {
+    test("removes an existing secret entry", async () => {
+      await client.set("KEY", "value", { path: testDir });
+
+      const removed = await client.remove("KEY", { path: testDir });
+      expect(removed).toBe(true);
+
+      const secret = await client.get("KEY", { cwd: testDir });
+      expect(secret).toBeUndefined();
+    });
+
+    test("returns false when key does not exist", async () => {
+      const removed = await client.remove("NONEXISTENT", { path: testDir });
+      expect(removed).toBe(false);
+    });
+
+    test("restores inheritance after removal", async () => {
+      // Set at parent level
+      await client.set("KEY", "parent_value", { path: testDir });
+      const childPath = join(testDir, "projects");
+
+      // Override at child level
+      await client.set("KEY", "child_value", { path: childPath });
+
+      // Verify child value takes precedence
+      let secret = await client.get("KEY", { cwd: childPath });
+      expect(secret?.value).toBe("child_value");
+
+      // Remove child override
+      const removed = await client.remove("KEY", { path: childPath });
+      expect(removed).toBe(true);
+
+      // Now should inherit from parent
+      secret = await client.get("KEY", { cwd: childPath });
+      expect(secret?.value).toBe("parent_value");
+      expect(secret?.sourcePath).toBe(testDir);
+    });
+
+    test("removes tombstone and restores inheritance", async () => {
+      // Set at parent level
+      await client.set("KEY", "parent_value", { path: testDir });
+      const childPath = join(testDir, "projects");
+
+      // Block at child level
+      await client.block("KEY", { path: childPath });
+
+      // Verify key is blocked
+      let secret = await client.get("KEY", { cwd: childPath });
+      expect(secret).toBeUndefined();
+
+      // Remove the tombstone
+      const removed = await client.remove("KEY", { path: childPath });
+      expect(removed).toBe(true);
+
+      // Now should inherit from parent
+      secret = await client.get("KEY", { cwd: childPath });
+      expect(secret?.value).toBe("parent_value");
+    });
+
+    test("throws for invalid key format", async () => {
+      await expect(
+        client.remove("invalid-key", { path: testDir })
+      ).rejects.toThrow("Invalid environment variable key");
+    });
+  });
+
   describe("export", () => {
     test("exports empty string when no secrets", async () => {
       const output = await client.export({ cwd: testDir, format: "shell" });
