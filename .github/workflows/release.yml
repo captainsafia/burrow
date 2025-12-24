@@ -144,6 +144,11 @@ jobs:
 
             ### Installation
 
+            **Install script (Linux/macOS):**
+            ```bash
+            curl -fsSL https://safia.rocks/burrow/install.sh | sh -s -- v${{ env.PRERELEASE_VERSION }}
+            ```
+
             **npm:**
             ```bash
             npm install burrow@preview
@@ -217,6 +222,11 @@ jobs:
             ## Release v${{ env.VERSION }}
 
             ### Installation
+
+            **Install script (Linux/macOS):**
+            ```bash
+            curl -fsSL https://safia.rocks/burrow/install.sh | sh -s -- v${{ env.VERSION }}
+            ```
 
             **npm:**
             ```bash
