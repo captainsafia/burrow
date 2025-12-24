@@ -26,7 +26,7 @@ program
   .argument("<key=value>", "Secret in KEY=VALUE format")
   .option("-p, --path <dir>", "Directory to scope the secret to (default: cwd)", validatePath)
   .action(async (keyValue: string, options: { path?: string }) => {
-    const client = new BurrowClient();
+    using client = new BurrowClient();
     const eqIndex = keyValue.indexOf("=");
 
     if (eqIndex === -1) {
@@ -52,7 +52,7 @@ program
   .argument("<key>", "Secret key to retrieve")
   .addOption(new Option("-f, --format <format>", "Output format").choices(["plain", "json"]).default("plain"))
   .action(async (key: string, options: { format: string }) => {
-    const client = new BurrowClient();
+    using client = new BurrowClient();
 
     try {
       const secret = await client.get(key);
@@ -88,7 +88,7 @@ program
   .description("List all resolved secrets for cwd")
   .addOption(new Option("-f, --format <format>", "Output format").choices(["plain", "json"]).default("plain"))
   .action(async (options: { format: string }) => {
-    const client = new BurrowClient();
+    using client = new BurrowClient();
 
     try {
       const secrets = await client.list();
@@ -126,7 +126,7 @@ program
   .argument("<key>", "Secret key to block")
   .option("-p, --path <dir>", "Directory to scope the tombstone to (default: cwd)", validatePath)
   .action(async (key: string, options: { path?: string }) => {
-    const client = new BurrowClient();
+    using client = new BurrowClient();
 
     try {
       await client.block(key, { path: options.path });
@@ -143,7 +143,7 @@ program
   .argument("<key>", "Secret key to remove")
   .option("-p, --path <dir>", "Directory to remove the secret from (default: cwd)", validatePath)
   .action(async (key: string, options: { path?: string }) => {
-    const client = new BurrowClient();
+    using client = new BurrowClient();
 
     try {
       const removed = await client.remove(key, { path: options.path });
@@ -165,7 +165,7 @@ program
   .option("-p, --path <dir>", "Directory to resolve from (default: cwd)", validatePath)
   .option("--sources", "Include source paths in json output")
   .action(async (options: { format: string; path?: string; sources?: boolean }) => {
-    const client = new BurrowClient();
+    using client = new BurrowClient();
     const format = options.format as ExportFormat;
 
     try {
