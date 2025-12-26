@@ -1,6 +1,6 @@
 import type { ResolvedSecret } from "./resolver.ts";
 
-export type ExportFormat = "shell" | "dotenv" | "json";
+export type ExportFormat = "shell" | "bash" | "fish" | "powershell" | "cmd" | "dotenv" | "json";
 
 const ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -25,6 +25,11 @@ function escapeDoubleQuotes(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+function escapePowerShellValue(value: string): string {
+  // In PowerShell single quotes, only single quotes need escaping (doubled)
+  return value.replace(/'/g, "''");
+}
+
 export function formatShell(secrets: Map<string, ResolvedSecret>): string {
   const lines: string[] = [];
   const sortedKeys = Array.from(secrets.keys()).sort();
@@ -34,6 +39,50 @@ export function formatShell(secrets: Map<string, ResolvedSecret>): string {
     assertValidEnvKey(key);
     const escapedValue = escapeShellValue(secret.value);
     lines.push(`export ${key}='${escapedValue}'`);
+  }
+
+  return lines.join("\n");
+}
+
+export function formatFish(secrets: Map<string, ResolvedSecret>): string {
+  const lines: string[] = [];
+  const sortedKeys = Array.from(secrets.keys()).sort();
+
+  for (const key of sortedKeys) {
+    const secret = secrets.get(key)!;
+    assertValidEnvKey(key);
+    const escapedValue = escapeShellValue(secret.value);
+    lines.push(`set -gx ${key} '${escapedValue}'`);
+  }
+
+  return lines.join("\n");
+}
+
+export function formatPowerShell(secrets: Map<string, ResolvedSecret>): string {
+  const lines: string[] = [];
+  const sortedKeys = Array.from(secrets.keys()).sort();
+
+  for (const key of sortedKeys) {
+    const secret = secrets.get(key)!;
+    assertValidEnvKey(key);
+    const escapedValue = escapePowerShellValue(secret.value);
+    lines.push(`$env:${key} = '${escapedValue}'`);
+  }
+
+  return lines.join("\n");
+}
+
+export function formatCmd(secrets: Map<string, ResolvedSecret>): string {
+  const lines: string[] = [];
+  const sortedKeys = Array.from(secrets.keys()).sort();
+
+  for (const key of sortedKeys) {
+    const secret = secrets.get(key)!;
+    assertValidEnvKey(key);
+    // cmd.exe set command doesn't use quotes, value is taken literally until EOL
+    // Special characters like & | < > ^ need to be escaped with ^
+    const escapedValue = secret.value.replace(/([&|<>^])/g, "^$1");
+    lines.push(`set ${key}=${escapedValue}`);
   }
 
   return lines.join("\n");
@@ -90,7 +139,14 @@ export function format(
 ): string {
   switch (fmt) {
     case "shell":
+    case "bash":
       return formatShell(secrets);
+    case "fish":
+      return formatFish(secrets);
+    case "powershell":
+      return formatPowerShell(secrets);
+    case "cmd":
+      return formatCmd(secrets);
     case "dotenv":
       return formatDotenv(secrets);
     case "json":

@@ -376,10 +376,12 @@
 
             <div class="command-group">
                 <h4>Export to shell</h4>
-                <p>Export secrets as environment variables:</p>
+                <p>Export secrets as environment variables (auto-detects your shell):</p>
                 <pre><code>eval "$(burrow export)"</code></pre>
                 <p>Use with a command:</p>
                 <pre><code>eval "$(burrow export)" && npm start</code></pre>
+                <p>Or specify a format explicitly (bash, fish, powershell, cmd, dotenv, json):</p>
+                <pre><code>burrow export --format fish</code></pre>
             </div>
 
             <div class="command-group">
@@ -419,7 +421,7 @@
                     </tr>
                     <tr>
                         <td>burrow export</td>
-                        <td>Export secrets as shell environment variables</td>
+                        <td>Export secrets as environment variables (auto-detects shell format)</td>
                     </tr>
                     <tr>
                         <td>burrow unset &lt;key&gt;</td>

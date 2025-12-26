@@ -3,6 +3,9 @@ import {
   validateEnvKey,
   assertValidEnvKey,
   formatShell,
+  formatFish,
+  formatPowerShell,
+  formatCmd,
   formatDotenv,
   formatJson,
   format,
@@ -203,10 +206,111 @@ describe("formatJson", () => {
   });
 });
 
+describe("formatFish", () => {
+  test("formats empty map as empty string", () => {
+    const secrets = new Map<string, ResolvedSecret>();
+    expect(formatFish(secrets)).toBe("");
+  });
+
+  test("formats single secret", () => {
+    const secrets = createSecretsMap([["MY_KEY", "my_value", "/path"]]);
+    expect(formatFish(secrets)).toBe("set -gx MY_KEY 'my_value'");
+  });
+
+  test("formats multiple secrets sorted by key", () => {
+    const secrets = createSecretsMap([
+      ["B_KEY", "b", "/path"],
+      ["A_KEY", "a", "/path"],
+    ]);
+    expect(formatFish(secrets)).toBe(
+      "set -gx A_KEY 'a'\nset -gx B_KEY 'b'"
+    );
+  });
+
+  test("escapes single quotes in values", () => {
+    const secrets = createSecretsMap([["KEY", "it's a test", "/path"]]);
+    expect(formatFish(secrets)).toBe("set -gx KEY 'it'\"'\"'s a test'");
+  });
+});
+
+describe("formatPowerShell", () => {
+  test("formats empty map as empty string", () => {
+    const secrets = new Map<string, ResolvedSecret>();
+    expect(formatPowerShell(secrets)).toBe("");
+  });
+
+  test("formats single secret", () => {
+    const secrets = createSecretsMap([["MY_KEY", "my_value", "/path"]]);
+    expect(formatPowerShell(secrets)).toBe("$env:MY_KEY = 'my_value'");
+  });
+
+  test("formats multiple secrets sorted by key", () => {
+    const secrets = createSecretsMap([
+      ["B_KEY", "b", "/path"],
+      ["A_KEY", "a", "/path"],
+    ]);
+    expect(formatPowerShell(secrets)).toBe(
+      "$env:A_KEY = 'a'\n$env:B_KEY = 'b'"
+    );
+  });
+
+  test("escapes single quotes in values by doubling them", () => {
+    const secrets = createSecretsMap([["KEY", "it's a test", "/path"]]);
+    expect(formatPowerShell(secrets)).toBe("$env:KEY = 'it''s a test'");
+  });
+});
+
+describe("formatCmd", () => {
+  test("formats empty map as empty string", () => {
+    const secrets = new Map<string, ResolvedSecret>();
+    expect(formatCmd(secrets)).toBe("");
+  });
+
+  test("formats single secret", () => {
+    const secrets = createSecretsMap([["MY_KEY", "my_value", "/path"]]);
+    expect(formatCmd(secrets)).toBe("set MY_KEY=my_value");
+  });
+
+  test("formats multiple secrets sorted by key", () => {
+    const secrets = createSecretsMap([
+      ["B_KEY", "b", "/path"],
+      ["A_KEY", "a", "/path"],
+    ]);
+    expect(formatCmd(secrets)).toBe(
+      "set A_KEY=a\nset B_KEY=b"
+    );
+  });
+
+  test("escapes special cmd characters with caret", () => {
+    const secrets = createSecretsMap([["KEY", "a & b | c < d > e", "/path"]]);
+    expect(formatCmd(secrets)).toBe("set KEY=a ^& b ^| c ^< d ^> e");
+  });
+});
+
 describe("format", () => {
   test("dispatches to shell formatter", () => {
     const secrets = createSecretsMap([["KEY", "value", "/path"]]);
     expect(format(secrets, "shell")).toBe("export KEY='value'");
+  });
+
+  test("dispatches to bash formatter (alias for shell)", () => {
+    const secrets = createSecretsMap([["KEY", "value", "/path"]]);
+    expect(format(secrets, "bash")).toBe("export KEY='value'");
+  });
+
+  test("dispatches to fish formatter", () => {
+    const secrets = createSecretsMap([["KEY", "value", "/path"]]);
+    expect(format(secrets, "fish")).toBe("set -gx KEY 'value'");
+  });
+
+  test("dispatches to powershell formatter", () => {
+    const secrets = createSecretsMap([["KEY", "value", "/path"]]);
+    expect(format(secrets, "powershell")).toBe("$env:KEY = 'value'");
+  });
+
+  test("dispatches to cmd formatter", () => {
+    const secrets = createSecretsMap([["KEY", "value", "/path"]]);
+    expect(format(secrets, "cmd")).toBe("set KEY=value");
   });
 
   test("dispatches to dotenv formatter", () => {

@@ -162,15 +162,60 @@ program
     }
   });
 
+function detectShell(): ExportFormat {
+  // Check SHELL environment variable (Unix-like systems)
+  const shell = process.env["SHELL"] ?? "";
+  const shellBase = shell.split("/").pop() ?? "";
+
+  // Check for PowerShell-specific environment variables
+  if (process.env["PSModulePath"]) {
+    return "powershell";
+  }
+
+  // Check for cmd.exe (Windows without PowerShell)
+  if (process.env["ComSpec"] && !process.env["SHELL"] && !process.env["PSModulePath"]) {
+    // On Windows cmd.exe, SHELL is typically not set
+    const comspec = process.env["ComSpec"].toLowerCase();
+    if (comspec.includes("cmd.exe")) {
+      return "cmd";
+    }
+  }
+
+  // Match common shell names
+  switch (shellBase) {
+    case "fish":
+      return "fish";
+    case "bash":
+    case "zsh":
+    case "sh":
+    case "dash":
+    case "ksh":
+      return "bash";
+    case "pwsh":
+    case "powershell":
+      return "powershell";
+    default:
+      // Default to POSIX shell syntax
+      return "bash";
+  }
+}
+
 program
   .command("export")
   .description("Export resolved secrets in various formats")
-  .addOption(new Option("-f, --format <format>", "Export format").choices(["shell", "dotenv", "json"]).default("shell"))
+  .addOption(new Option("-f, --format <format>", "Export format (shell auto-detects your shell)").choices(["shell", "bash", "fish", "powershell", "cmd", "dotenv", "json"]).default("shell"))
   .option("-p, --path <dir>", "Directory to resolve from (default: cwd)", validatePath)
   .option("--sources", "Include source paths in json output")
   .action(async (options: { format: string; path?: string; sources?: boolean }) => {
     using client = new BurrowClient();
-    const format = options.format as ExportFormat;
+    let format: ExportFormat;
+
+    if (options.format === "shell") {
+      // Auto-detect shell when using the default "shell" format
+      format = detectShell();
+    } else {
+      format = options.format as ExportFormat;
+    }
 
     try {
       const output = await client.export({

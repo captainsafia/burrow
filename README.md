@@ -44,8 +44,14 @@ burrow list --format json
 ### Export to your shell
 
 ```bash
+# Auto-detects your shell (bash, fish, powershell, cmd)
 eval "$(burrow export)"
-eval "$(burrow export --format shell)" && npm start
+
+# Or specify a format explicitly
+burrow export --format fish
+burrow export --format powershell
+burrow export --format dotenv
+burrow export --format json
 ```
 
 ### Block inheritance

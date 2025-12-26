@@ -167,7 +167,7 @@ describe("Integration Tests", () => {
       const parsed = JSON.parse(get.stdout);
       expect(parsed.key).toBe("A");
 
-      const exportResult = await runBurrow(["export", "--path", ctx.repo], {
+      const exportResult = await runBurrow(["export", "--format", "bash", "--path", ctx.repo], {
         cwd: ctx.root,
         configDir: ctx.configDir,
       });
@@ -408,7 +408,7 @@ describe("Integration Tests", () => {
         configDir: ctx.configDir,
       });
 
-      const exportResult = await runBurrow(["export", "--format", "shell"], {
+      const exportResult = await runBurrow(["export", "--format", "bash"], {
         cwd: ctx.repo,
         configDir: ctx.configDir,
       });
@@ -425,7 +425,7 @@ describe("Integration Tests", () => {
         configDir: ctx.configDir,
       });
 
-      const exportResult = await runBurrow(["export", "--format", "shell"], {
+      const exportResult = await runBurrow(["export", "--format", "bash"], {
         cwd: ctx.repo,
         configDir: ctx.configDir,
       });
@@ -445,7 +445,7 @@ describe("Integration Tests", () => {
         configDir: ctx.configDir,
       });
 
-      const exportResult = await runBurrow(["export", "--format", "shell"], {
+      const exportResult = await runBurrow(["export", "--format", "bash"], {
         cwd: ctx.repo,
         configDir: ctx.configDir,
       });
@@ -465,7 +465,7 @@ describe("Integration Tests", () => {
         configDir: ctx.configDir,
       });
 
-      const exportResult = await runBurrow(["export", "--format", "shell"], {
+      const exportResult = await runBurrow(["export", "--format", "bash"], {
         cwd: ctx.repo,
         configDir: ctx.configDir,
       });
