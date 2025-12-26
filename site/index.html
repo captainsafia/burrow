@@ -105,13 +105,43 @@
             color: #92400e;
             margin-bottom: 16px;
             overflow-x: auto;
-            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
         }
 
         .install-cmd code {
             background: none;
             border: none;
             padding: 0;
+        }
+
+        .copy-btn {
+            background: #d97706;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 12px;
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: background 0.2s;
+        }
+
+        .copy-btn:hover {
+            background: #b45309;
+        }
+
+        .copy-btn.copied {
+            background: #78350f;
+        }
+
+        .copy-btn svg {
+            width: 16px;
+            height: 16px;
         }
         
         section {
@@ -306,6 +336,7 @@
         <header>
             <div class="header-content">
                 <a href="#" class="logo">
+                    <img src="logo.svg" alt="Burrow logo" width="32" height="32">
                     <h1>burrow</h1>
                 </a>
                 <div class="header-links">
@@ -322,7 +353,13 @@
             </div>
 
             <div class="install-cmd">
-                <code>curl -fsSL https://safia.rocks/burrow/install.sh | sh</code>
+                <code id="install-code">curl -fsSL https://safia.rocks/burrow/install.sh | sh</code>
+                <button class="copy-btn" onclick="copyInstallCommand()" aria-label="Copy to clipboard">
+                    <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    <span id="copy-text">Copy</span>
+                </button>
             </div>
 
         </section>
@@ -445,7 +482,9 @@
 
         <section>
             <h3>Library Usage</h3>
-            <p>Burrow also works as a TypeScript/JavaScript library:</p>
+            <p>Burrow also works as a TypeScript/JavaScript library. Install it via npm:</p>
+            <pre><code>npm install @captainsafia/burrow</code></pre>
+            <p>Then use it in your code:</p>
             <pre><code>import { BurrowClient } from '@captainsafia/burrow';
 
 const client = new BurrowClient();
@@ -474,5 +513,26 @@ try {
             </p>
         </footer>
     </div>
+
+    <script>
+        function copyInstallCommand() {
+            const code = document.getElementById('install-code').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                const btn = document.querySelector('.copy-btn');
+                const text = document.getElementById('copy-text');
+                const icon = document.getElementById('copy-icon');
+                
+                btn.classList.add('copied');
+                text.textContent = 'Copied!';
+                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />';
+                
+                setTimeout(() => {
+                    btn.classList.remove('copied');
+                    text.textContent = 'Copy';
+                    icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />';
+                }, 1000);
+            });
+        }
+    </script>
 </body>
 </html>

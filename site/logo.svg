@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 -40 512 552"
+     role="img"
+     aria-label="Cute brown bunny face logo">
+  <defs>
+    <radialGradient id="bgGlow" cx="50%" cy="45%" r="70%">
+      <stop offset="0%" stop-color="#FFF8F2"/>
+      <stop offset="60%" stop-color="#FAF3EE"/>
+      <stop offset="100%" stop-color="#FFFFFF"/>
+    </radialGradient>
+
+    <radialGradient id="faceGrad" cx="50%" cy="32%" r="80%">
+      <stop offset="0%" stop-color="#F6E8DC"/>
+      <stop offset="70%" stop-color="#E8D2C1"/>
+      <stop offset="100%" stop-color="#D8BCA7"/>
+    </radialGradient>
+
+    <linearGradient id="earGrad" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#F2E3D6"/>
+      <stop offset="100%" stop-color="#CFAF97"/>
+    </linearGradient>
+
+    <linearGradient id="innerEarGrad" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#E9B7A6"/>
+      <stop offset="100%" stop-color="#D89A8A"/>
+    </linearGradient>
+
+    <radialGradient id="eyeGrad" cx="35%" cy="30%" r="85%">
+      <stop offset="0%" stop-color="#4A3B2F"/>
+      <stop offset="60%" stop-color="#2A1E16"/>
+      <stop offset="100%" stop-color="#140B07"/>
+    </radialGradient>
+
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12"
+                    flood-color="#3A2416" flood-opacity="0.18"/>
+    </filter>
+
+    <filter id="softEdge" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="0.6" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <circle cx="256" cy="256" r="238" fill="url(#bgGlow)"/>
+
+  <!-- BIG EARS (no clipping now) -->
+  <g filter="url(#softShadow)"
+     transform="translate(256 180) scale(1.25) translate(-256 -180)">
+    <!-- Left ear -->
+    <path d="M150 80
+             C118 10, 180 -10, 214 40
+             C240 78, 244 132, 232 182
+             C222 222, 188 244, 154 238
+             C132 234, 120 194, 128 158
+             C136 120, 164 114, 150 80 Z"
+          fill="url(#earGrad)"
+          stroke="#3A2416" stroke-width="10"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M172 88
+             C154 44, 182 34, 204 60
+             C220 82, 220 120, 214 150
+             C208 174, 188 190, 170 186
+             C156 182, 154 158, 158 136
+             C162 108, 188 108, 172 88 Z"
+          fill="url(#innerEarGrad)"/>
+
+    <!-- Right ear -->
+    <path d="M362 80
+             C394 10, 332 -10, 298 40
+             C272 78, 268 132, 280 182
+             C290 222, 324 244, 358 238
+             C380 234, 392 194, 384 158
+             C376 120, 348 114, 362 80 Z"
+          fill="url(#earGrad)"
+          stroke="#3A2416" stroke-width="10"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M340 88
+             C358 44, 330 34, 308 60
+             C292 82, 292 120, 298 150
+             C304 174, 324 190, 342 186
+             C356 182, 358 158, 354 136
+             C350 108, 324 108, 340 88 Z"
+          fill="url(#innerEarGrad)"/>
+  </g>
+
+  <!-- Face -->
+  <g filter="url(#softShadow)">
+    <path d="M256 150
+             C150 150,88 228,88 320
+             C88 416,158 468,256 468
+             C354 468,424 416,424 320
+             C424 228,362 150,256 150 Z"
+          fill="url(#faceGrad)"
+          stroke="#3A2416" stroke-width="12"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Eyes -->
+  <g filter="url(#softEdge)">
+    <ellipse cx="184" cy="278" rx="46" ry="56" fill="url(#eyeGrad)"/>
+    <circle cx="170" cy="260" r="14" fill="#FFFFFF"/>
+    <circle cx="198" cy="292" r="8" fill="#FFFFFF"/>
+    <circle cx="204" cy="262" r="5" fill="#CFE9FF"/>
+
+    <ellipse cx="328" cy="278" rx="46" ry="56" fill="url(#eyeGrad)"/>
+    <circle cx="314" cy="260" r="14" fill="#FFFFFF"/>
+    <circle cx="342" cy="292" r="8" fill="#FFFFFF"/>
+    <circle cx="348" cy="262" r="5" fill="#CFE9FF"/>
+  </g>
+
+  <!-- Nose + mouth -->
+  <g filter="url(#softEdge)">
+    <path d="M256 318
+             C246 306,230 314,234 330
+             C238 346,256 354,256 354
+             C256 354,274 346,278 330
+             C282 314,266 306,256 318 Z"
+          fill="#C9826A"
+          stroke="#3A2416" stroke-width="6"/>
+
+    <path d="M220 360 Q256 390 292 360"
+          fill="none"
+          stroke="#3A2416"
+          stroke-width="10"
+          stroke-linecap="round"/>
+
+    <rect x="238" y="376" width="20" height="30" rx="6" fill="#FFFFFF"/>
+    <rect x="258" y="376" width="20" height="30" rx="6" fill="#FFFFFF"/>
+    <line x1="258" y1="376" x2="258" y2="406"
+          stroke="#E0E0E0" stroke-width="2"/>
+  </g>
+
+  <!-- Whisker dots -->
+  <g fill="#3A2416" opacity="0.5">
+    <circle cx="112" cy="360" r="5"/>
+    <circle cx="128" cy="378" r="4"/>
+    <circle cx="400" cy="360" r="5"/>
+    <circle cx="384" cy="378" r="4"/>
+  </g>
+</svg>
