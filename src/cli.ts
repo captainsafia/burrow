@@ -35,6 +35,10 @@ program
     }
 
     const key = keyValue.slice(0, eqIndex);
+    if (key.trim() === "") {
+      console.error("Error: Key cannot be empty");
+      process.exit(1);
+    }
     const value = keyValue.slice(eqIndex + 1);
 
     try {

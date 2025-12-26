@@ -1,10 +1,11 @@
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { describe, expect, test, beforeEach, afterEach, spyOn } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Storage } from "../src/storage/index.ts";
+import * as platform from "../src/platform/index.ts";
 
 describe("Storage", () => {
   let testDir: string;
@@ -174,6 +175,92 @@ describe("Storage", () => {
 
       const paths = await storage.getAncestorPaths("/home/user");
       expect(paths.sort()).toEqual(["/", "/home"]);
+    });
+
+    describe("Windows paths", () => {
+      let windowsStorage: Storage;
+      let windowsTestDir: string;
+      let isWindowsSpy: ReturnType<typeof spyOn>;
+
+      beforeEach(async () => {
+        windowsTestDir = join(tmpdir(), `burrow-test-win-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+        await mkdir(windowsTestDir, { recursive: true });
+
+        // Spy on isWindows to return true for Windows path testing
+        isWindowsSpy = spyOn(platform, "isWindows").mockReturnValue(true);
+
+        windowsStorage = new Storage({ configDir: windowsTestDir });
+      });
+
+      afterEach(async () => {
+        windowsStorage?.close();
+        isWindowsSpy?.mockRestore();
+        await rm(windowsTestDir, { recursive: true, force: true });
+      });
+
+      test("returns exact Windows path match", async () => {
+        await windowsStorage.setSecret("C:\\Users\\test\\project", "KEY", "value");
+
+        const paths = await windowsStorage.getAncestorPaths("C:\\Users\\test\\project");
+        expect(paths).toEqual(["C:\\Users\\test\\project"]);
+      });
+
+      test("returns Windows ancestor paths", async () => {
+        await windowsStorage.setSecret("C:\\Users", "KEY", "value");
+        await windowsStorage.setSecret("C:\\Users\\test", "KEY", "value");
+        await windowsStorage.setSecret("C:\\Users\\test\\project", "KEY", "value");
+
+        const paths = await windowsStorage.getAncestorPaths("C:\\Users\\test\\project\\src");
+        expect(paths.sort()).toEqual(["C:\\Users", "C:\\Users\\test", "C:\\Users\\test\\project"]);
+      });
+
+      test("does not return Windows paths that are not ancestors", async () => {
+        await windowsStorage.setSecret("C:\\Users\\test\\project", "KEY", "value");
+        await windowsStorage.setSecret("C:\\Users\\other", "KEY", "value");
+        await windowsStorage.setSecret("D:\\Data", "KEY", "value");
+
+        const paths = await windowsStorage.getAncestorPaths("C:\\Users\\test\\project\\src");
+        expect(paths).toEqual(["C:\\Users\\test\\project"]);
+      });
+
+      test("does not return partial Windows path matches", async () => {
+        await windowsStorage.setSecret("C:\\Users\\test", "KEY", "value");
+        await windowsStorage.setSecret("C:\\Users\\testing", "KEY", "value");
+
+        const paths = await windowsStorage.getAncestorPaths("C:\\Users\\test\\project");
+        expect(paths).toEqual(["C:\\Users\\test"]);
+      });
+
+      test("returns Windows drive root as ancestor", async () => {
+        await windowsStorage.setSecret("C:\\", "KEY", "value");
+        await windowsStorage.setSecret("C:\\Users", "KEY", "value");
+
+        const paths = await windowsStorage.getAncestorPaths("C:\\Users\\test");
+        expect(paths.sort()).toEqual(["C:\\", "C:\\Users"]);
+      });
+
+      test("handles different drive letters correctly", async () => {
+        await windowsStorage.setSecret("C:\\", "KEY", "value");
+        await windowsStorage.setSecret("D:\\", "KEY", "value");
+        await windowsStorage.setSecret("C:\\Users", "KEY", "value");
+
+        const paths = await windowsStorage.getAncestorPaths("C:\\Users\\test");
+        expect(paths.sort()).toEqual(["C:\\", "C:\\Users"]);
+      });
+
+      test("handles lowercase drive letters", async () => {
+        await windowsStorage.setSecret("c:\\Users", "KEY", "value");
+
+        const paths = await windowsStorage.getAncestorPaths("c:\\Users\\test");
+        expect(paths).toEqual(["c:\\Users"]);
+      });
+
+      test("empty result when no matching paths", async () => {
+        await windowsStorage.setSecret("D:\\Other", "KEY", "value");
+
+        const paths = await windowsStorage.getAncestorPaths("C:\\Users\\test");
+        expect(paths).toEqual([]);
+      });
     });
   });
 

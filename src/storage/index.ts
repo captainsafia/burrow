@@ -47,13 +47,13 @@ export class Storage {
     }
 
     this.db = new Database(this.storePath);
-    this.db.run("PRAGMA journal_mode = WAL");
 
     // Set restrictive permissions on database file (Unix only)
     if (!isWindows()) {
       await chmod(this.storePath, 0o600);
     }
 
+    this.db.run("PRAGMA journal_mode = WAL");
     this.db.run(`
       CREATE TABLE IF NOT EXISTS secrets (
         path TEXT NOT NULL,
@@ -149,14 +149,32 @@ export class Storage {
 
     // Match paths where:
     // 1. The stored path equals the canonical path exactly, OR
-    // 2. The canonical path starts with the stored path followed by '/'
-    // 3. The stored path is the root '/' (special case since '/' + '/' would be '//')
+    // 2. The canonical path starts with the stored path followed by a path separator
+    // 3. The stored path is the root (special case for drive letters or '/')
     // This prevents partial matches like /home/user matching /home/username
-    const rows = db
-      .query<{ path: string }, [string, string]>(
-        "SELECT DISTINCT path FROM secrets WHERE ? = path OR ? LIKE path || '/' || '%' OR path = '/'"
-      )
-      .all(canonicalPath, canonicalPath);
+    //
+    // On Windows, paths use backslashes and may have drive letters (e.g., C:\Users\...)
+    // On Unix, paths use forward slashes and root is '/'
+    let rows: { path: string }[];
+
+    if (isWindows()) {
+      // Windows: use backslash separator
+      // Root paths on Windows are drive letters like "C:\" or "D:\"
+      // Match if canonical path equals stored path, or starts with stored path + '\'
+      // For drive roots (e.g., "C:\"), check that canonical path starts with the same drive
+      rows = db
+        .query<{ path: string }, [string, string, string]>(
+          "SELECT DISTINCT path FROM secrets WHERE ? = path OR ? LIKE path || '\\' || '%' OR (length(path) = 3 AND path LIKE '_:\\' AND ? LIKE path || '%')"
+        )
+        .all(canonicalPath, canonicalPath, canonicalPath);
+    } else {
+      // Unix: use forward slash separator
+      rows = db
+        .query<{ path: string }, [string, string]>(
+          "SELECT DISTINCT path FROM secrets WHERE ? = path OR ? LIKE path || '/' || '%' OR path = '/'"
+        )
+        .all(canonicalPath, canonicalPath);
+    }
 
     return rows.map((row) => row.path);
   }
