@@ -3,24 +3,94 @@
 # Usage: curl -fsSL https://safia.rocks/burrow/install.sh | sh
 # Usage with version: curl -fsSL https://safia.rocks/burrow/install.sh | sh -s -- v1.0.0
 # Usage with PR: curl -fsSL https://safia.rocks/burrow/install.sh | sh -s -- --pr 42
+# Usage with preview: curl -fsSL https://safia.rocks/burrow/install.sh | sh -s -- --preview
 
 set -e
 
+# ============================================================================
+# Configuration
+# ============================================================================
 REPO="captainsafia/burrow"
+TOOL_NAME="Burrow"
 INSTALL_DIR="${BURROW_INSTALL_DIR:-$HOME/.burrow/bin}"
 BINARY_NAME="burrow"
+
+# ============================================================================
+# Variables
+# ============================================================================
 REQUESTED_VERSION=""
 PR_NUMBER=""
+PREVIEW_MODE=""
+VERBOSE=""
 
-# Parse arguments
+# ============================================================================
+# Logging
+# ============================================================================
+log() {
+    if [ -n "$VERBOSE" ]; then
+        echo "$@"
+    fi
+}
+
+# ============================================================================
+# Help
+# ============================================================================
+print_help() {
+    cat <<EOF
+Burrow CLI installer
+
+USAGE:
+    curl -fsSL https://safia.rocks/burrow/install.sh | sh [-- OPTIONS]
+
+OPTIONS:
+    --pr <number>    Install from PR artifacts (requires gh CLI)
+    --preview        Install latest preview/pre-release version
+    --verbose, -v    Show verbose output
+    --help, -h       Show this help message
+    <version>        Install specific version (e.g., v1.0.0)
+
+ENVIRONMENT:
+    BURROW_INSTALL_DIR    Custom install directory (default: ~/.burrow/bin)
+
+EXAMPLES:
+    # Install latest stable
+    curl -fsSL https://safia.rocks/burrow/install.sh | sh
+
+    # Install specific version
+    curl -fsSL https://safia.rocks/burrow/install.sh | sh -s -- v1.2.3
+
+    # Install from PR
+    curl -fsSL https://safia.rocks/burrow/install.sh | sh -s -- --pr 42
+
+    # Install latest preview
+    curl -fsSL https://safia.rocks/burrow/install.sh | sh -s -- --preview
+EOF
+}
+
+# ============================================================================
+# Argument Parsing
+# ============================================================================
 while [ $# -gt 0 ]; do
     case "$1" in
         --pr)
             PR_NUMBER="$2"
             shift 2
             ;;
+        --preview)
+            PREVIEW_MODE="1"
+            shift
+            ;;
+        --verbose|-v)
+            VERBOSE="1"
+            shift
+            ;;
+        --help|-h)
+            print_help
+            exit 0
+            ;;
         -*)
-            echo "Unknown option: $1"
+            echo "Error: Unknown option: $1"
+            echo "Run with --help for usage information"
             exit 1
             ;;
         *)
@@ -30,28 +100,32 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# Detect OS
+# ============================================================================
+# Platform Detection
+# ============================================================================
 detect_os() {
     case "$(uname -s)" in
-        Linux*)     echo "linux" ;;
-        Darwin*)    echo "darwin" ;;
-        MINGW*|MSYS*|CYGWIN*) echo "windows" ;;
-        *)          echo "unknown" ;;
+        Linux*)                     echo "linux" ;;
+        Darwin*)                    echo "darwin" ;;
+        MINGW*|MSYS*|CYGWIN*)       echo "windows" ;;
+        *)                          echo "unknown" ;;
     esac
 }
 
-# Detect architecture
 detect_arch() {
     case "$(uname -m)" in
         x86_64|amd64)   echo "x64" ;;
         arm64|aarch64)  echo "arm64" ;;
+        armv7l)         echo "arm" ;;
+        i386|i686)      echo "x86" ;;
         *)              echo "unknown" ;;
     esac
 }
 
-# Detect current shell
+# ============================================================================
+# Shell Detection
+# ============================================================================
 detect_shell() {
-    # First try to get the shell from SHELL environment variable
     if [ -n "$SHELL" ]; then
         case "$SHELL" in
             */bash)  echo "bash" ;;
@@ -60,17 +134,18 @@ detect_shell() {
             */ksh)   echo "ksh" ;;
             */tcsh)  echo "tcsh" ;;
             */csh)   echo "csh" ;;
-            *)       echo "sh" ;;
+            *)       basename "$SHELL" ;;
         esac
+    elif command -v ps >/dev/null 2>&1; then
+        # Fallback: detect from parent process
+        ps -p $$ -o comm= 2>/dev/null | sed 's/^-//' || echo "sh"
     else
         echo "sh"
     fi
 }
 
-# Get shell config file
 get_shell_config() {
-    SHELL_NAME="$1"
-    case "$SHELL_NAME" in
+    case "$1" in
         bash)
             if [ -f "$HOME/.bashrc" ]; then
                 echo "$HOME/.bashrc"
@@ -80,177 +155,185 @@ get_shell_config() {
                 echo "$HOME/.profile"
             fi
             ;;
-        zsh)
-            echo "$HOME/.zshrc"
-            ;;
-        fish)
-            echo "$HOME/.config/fish/config.fish"
-            ;;
-        ksh)
-            echo "$HOME/.kshrc"
-            ;;
-        tcsh|csh)
-            echo "$HOME/.cshrc"
-            ;;
-        *)
-            echo "$HOME/.profile"
-            ;;
+        zsh)    echo "$HOME/.zshrc" ;;
+        fish)   echo "$HOME/.config/fish/config.fish" ;;
+        ksh)    echo "$HOME/.kshrc" ;;
+        tcsh)   echo "$HOME/.tcshrc" ;;
+        csh)    echo "$HOME/.cshrc" ;;
+        *)      echo "$HOME/.profile" ;;
     esac
 }
 
-# Get shell-specific PATH export command
 get_path_export_cmd() {
     SHELL_NAME="$1"
     INSTALL_PATH="$2"
     case "$SHELL_NAME" in
-        fish)
-            echo "set -gx PATH \"${INSTALL_PATH}\" \$PATH"
-            ;;
-        csh|tcsh)
-            echo "setenv PATH \"${INSTALL_PATH}:\$PATH\""
-            ;;
-        *)
-            echo "export PATH=\"${INSTALL_PATH}:\$PATH\""
-            ;;
+        fish)       echo "set -gx PATH \"${INSTALL_PATH}\" \$PATH" ;;
+        csh|tcsh)   echo "setenv PATH \"${INSTALL_PATH}:\$PATH\"" ;;
+        *)          echo "export PATH=\"${INSTALL_PATH}:\$PATH\"" ;;
     esac
 }
 
-# Get shell-specific source command
-get_source_cmd() {
-    SHELL_NAME="$1"
-    CONFIG_FILE="$2"
-    case "$SHELL_NAME" in
-        fish)
-            echo "source ${CONFIG_FILE}"
-            ;;
-        csh|tcsh)
-            echo "source ${CONFIG_FILE}"
-            ;;
-        *)
-            echo "source ${CONFIG_FILE}"
-            ;;
-    esac
-}
-
-# Get the latest stable release version
+# ============================================================================
+# Version Fetching
+# ============================================================================
 get_latest_version() {
     curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null |
         grep '"tag_name":' |
         sed -E 's/.*"([^"]+)".*/\1/'
 }
 
-# Install from PR artifacts
+get_latest_preview_version() {
+    curl -fsSL "https://api.github.com/repos/${REPO}/releases" 2>/dev/null |
+        grep -E '"tag_name":|"prerelease":' |
+        paste - - |
+        grep '"prerelease": true' |
+        head -1 |
+        sed -E 's/.*"tag_name": *"([^"]+)".*/\1/'
+}
+
+# ============================================================================
+# PATH Instructions
+# ============================================================================
+get_source_cmd() {
+    SHELL_NAME="$1"
+    CONFIG_FILE="$2"
+    case "$SHELL_NAME" in
+        fish)       echo "source ${CONFIG_FILE}" ;;
+        csh|tcsh)   echo "source ${CONFIG_FILE}" ;;
+        *)          echo ". ${CONFIG_FILE}" ;;
+    esac
+}
+
+show_path_instructions() {
+    CURRENT_SHELL=$(detect_shell)
+    SHELL_CONFIG=$(get_shell_config "$CURRENT_SHELL")
+    PATH_EXPORT=$(get_path_export_cmd "$CURRENT_SHELL" "$INSTALL_DIR")
+    SOURCE_CMD=$(get_source_cmd "$CURRENT_SHELL" "$SHELL_CONFIG")
+
+    case ":$PATH:" in
+        *":${INSTALL_DIR}:"*)
+            echo "Run 'burrow --help' to get started."
+            ;;
+        *)
+            echo ""
+            echo "To add burrow to your PATH:"
+            echo ""
+            echo "  echo '${PATH_EXPORT}' >> ${SHELL_CONFIG}"
+            echo "  ${SOURCE_CMD}"
+            ;;
+    esac
+}
+
+# ============================================================================
+# PR Artifact Installation
+# ============================================================================
 install_from_pr() {
     PR_NUM="$1"
     OS="$2"
     ARCH="$3"
-    
-    echo "Fetching PR #${PR_NUM} artifacts..."
-    
-    # Get artifact info
-    ARTIFACTS_JSON=$(curl -fsSL "https://api.github.com/repos/${REPO}/actions/artifacts?per_page=100")
-    
-    # Find the artifact for this platform
-    ARTIFACT_NAME="burrow-${OS}-${ARCH}"
-    
-    # Check if gh CLI is available and authenticated
-    if command -v gh >/dev/null 2>&1; then
-        # Check if gh is authenticated
-        if gh auth status >/dev/null 2>&1; then
-            echo "Using GitHub CLI to download artifact..."
-            
-            # Create temp directory for download
-            TEMP_DIR=$(mktemp -d)
-            trap "rm -rf '$TEMP_DIR'" EXIT
-            
-            # Get the latest successful workflow run for this PR
-            RUN_ID=$(gh run list --repo "${REPO}" --branch "refs/pull/${PR_NUM}/merge" --status success --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null || true)
-            
-            if [ -z "$RUN_ID" ]; then
-                # Try to find runs associated with the PR
-                RUN_ID=$(gh run list --repo "${REPO}" --status success --limit 20 --json databaseId,headBranch --jq ".[] | select(.headBranch | contains(\"${PR_NUM}\")) | .databaseId" 2>/dev/null | head -1 || true)
-            fi
-            
-            if [ -z "$RUN_ID" ]; then
-                echo "Error: Could not find a successful workflow run for PR #${PR_NUM}"
-                echo "Make sure the PR has a successful build. You can check at:"
-                echo "  https://github.com/${REPO}/pull/${PR_NUM}"
-                exit 1
-            fi
-            
-            echo "Found workflow run: ${RUN_ID}"
-            
-            # Download the artifact
-            if gh run download --repo "${REPO}" --name "${ARTIFACT_NAME}" --dir "$TEMP_DIR" "$RUN_ID"; then
-                # Find the binary in the downloaded artifact
-                DOWNLOADED_BINARY="${TEMP_DIR}/${ARTIFACT_NAME}"
-                
-                if [ -f "$DOWNLOADED_BINARY" ]; then
-                    # Create install directory
-                    mkdir -p "$INSTALL_DIR"
-                    
-                    # Move binary to install location
-                    mv "$DOWNLOADED_BINARY" "${INSTALL_DIR}/${BINARY_NAME}"
-                    
-                    # Make executable
-                    chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
-                    
-                    echo ""
-                    echo "✅ Burrow (PR #${PR_NUM}) installed successfully to ${INSTALL_DIR}/${BINARY_NAME}"
-                    echo ""
-                    
-                    # Detect current shell and show PATH instructions
-                    CURRENT_SHELL=$(detect_shell)
-                    SHELL_CONFIG=$(get_shell_config "$CURRENT_SHELL")
-                    PATH_EXPORT=$(get_path_export_cmd "$CURRENT_SHELL" "$INSTALL_DIR")
-                    SOURCE_CMD=$(get_source_cmd "$CURRENT_SHELL" "$SHELL_CONFIG")
 
-                    # Check if install dir is in PATH
-                    case ":$PATH:" in
-                        *":${INSTALL_DIR}:"*)
-                            echo "Burrow is ready to use! Run 'burrow --help' to get started."
-                            ;;
-                        *)
-                            echo "To use burrow, add it to your PATH by running:"
-                            echo ""
-                            echo "  echo '${PATH_EXPORT}' >> ${SHELL_CONFIG}"
-                            echo ""
-                            echo "Then restart your shell or run:"
-                            echo ""
-                            echo "  ${SOURCE_CMD}"
-                            echo ""
-                            echo "After that, run 'burrow --help' to get started."
-                            ;;
-                    esac
-                    exit 0
-                else
-                    echo "Warning: Could not find binary for ${OS}-${ARCH} in artifact"
-                    echo "Available files:"
-                    ls -la "$TEMP_DIR"
-                fi
-            else
-                echo "Warning: Failed to download artifact with gh CLI"
-            fi
-        fi
+    echo "Installing Burrow from PR #${PR_NUM}..."
+
+    ARTIFACT_NAME="${BINARY_NAME}-${OS}-${ARCH}"
+
+    # Check if gh CLI is available
+    if ! command -v gh >/dev/null 2>&1; then
+        echo "Error: Installing from PR artifacts requires the GitHub CLI (gh)."
+        echo ""
+        echo "To install burrow from PR #${PR_NUM}:"
+        echo "  1. Install gh: https://cli.github.com/"
+        echo "  2. Authenticate: gh auth login"
+        echo "  3. Re-run this installer:"
+        echo "     curl -fsSL https://safia.rocks/burrow/install.sh | sh -s -- --pr ${PR_NUM}"
+        exit 1
     fi
-    
-    # Fallback: Show manual download instructions
-    echo "⚠️  Installing from PR artifacts requires the GitHub CLI (gh)."
-    echo ""
-    echo "To install burrow from PR #${PR_NUM}:"
-    echo ""
-    echo "1. Install gh: https://cli.github.com/"
-    echo "2. Authenticate: gh auth login"
-    echo "3. Re-run this installer:"
-    echo "   curl -fsSL https://safia.rocks/burrow/install.sh | sh -s -- --pr ${PR_NUM}"
-    exit 1
+
+    # Check if gh is authenticated
+    if ! gh auth status >/dev/null 2>&1; then
+        echo "Error: GitHub CLI is not authenticated."
+        echo ""
+        echo "Run: gh auth login"
+        echo "Then re-run this installer."
+        exit 1
+    fi
+
+    # Create temp directory with cleanup trap
+    TEMP_DIR=$(mktemp -d)
+    trap 'rm -rf "$TEMP_DIR"' EXIT
+
+    # Get the PR's head SHA using GitHub API
+    log "Looking up PR #${PR_NUM}..."
+    PR_JSON=$(curl -fsSL "https://api.github.com/repos/${REPO}/pulls/${PR_NUM}" 2>/dev/null)
+
+    if [ -z "$PR_JSON" ]; then
+        echo "Error: Could not fetch PR #${PR_NUM}"
+        echo "Make sure the PR exists at:"
+        echo "  https://github.com/${REPO}/pull/${PR_NUM}"
+        exit 1
+    fi
+
+    HEAD_SHA=$(echo "$PR_JSON" | grep '"sha":' | head -1 | sed -E 's/.*"sha": *"([^"]+)".*/\1/')
+
+    if [ -z "$HEAD_SHA" ]; then
+        echo "Error: Could not determine head SHA for PR #${PR_NUM}"
+        exit 1
+    fi
+
+    log "Found PR head SHA: ${HEAD_SHA}"
+
+    # Find successful workflow runs for this SHA using GitHub API
+    RUNS_JSON=$(curl -fsSL "https://api.github.com/repos/${REPO}/actions/runs?head_sha=${HEAD_SHA}&status=success&per_page=10" 2>/dev/null)
+
+    RUN_ID=$(echo "$RUNS_JSON" | grep '"id":' | head -1 | sed -E 's/.*"id": *([0-9]+).*/\1/')
+
+    if [ -z "$RUN_ID" ]; then
+        echo "Error: Could not find a successful workflow run for PR #${PR_NUM}"
+        echo "Make sure the PR has a successful build. You can check at:"
+        echo "  https://github.com/${REPO}/pull/${PR_NUM}"
+        exit 1
+    fi
+
+    log "Found workflow run: ${RUN_ID}"
+    log "Downloading artifact: ${ARTIFACT_NAME}"
+
+    # Download the artifact using gh CLI (requires authentication)
+    if ! gh run download --repo "${REPO}" --name "${ARTIFACT_NAME}" --dir "$TEMP_DIR" "$RUN_ID" 2>/dev/null; then
+        echo "Error: Failed to download artifact '${ARTIFACT_NAME}'"
+        echo "The artifact may have expired or may not exist for this platform."
+        exit 1
+    fi
+
+    # Find the binary in the downloaded artifact
+    # The artifact may contain either the binary name directly or with platform suffix
+    if [ -f "${TEMP_DIR}/${BINARY_NAME}" ]; then
+        DOWNLOADED_BINARY="${TEMP_DIR}/${BINARY_NAME}"
+    elif [ -f "${TEMP_DIR}/${ARTIFACT_NAME}" ]; then
+        DOWNLOADED_BINARY="${TEMP_DIR}/${ARTIFACT_NAME}"
+    else
+        echo "Error: Binary not found in artifact"
+        echo "Available files:"
+        ls -la "$TEMP_DIR"
+        exit 1
+    fi
+
+    # Create install directory
+    mkdir -p "$INSTALL_DIR"
+
+    # Move binary to install location
+    mv "$DOWNLOADED_BINARY" "${INSTALL_DIR}/${BINARY_NAME}"
+
+    # Make executable
+    chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
+
+    echo "🐰 Burrow (PR #${PR_NUM}) installed to ${INSTALL_DIR}/${BINARY_NAME}"
+    show_path_instructions
 }
 
-# Main installation
+# ============================================================================
+# Main
+# ============================================================================
 main() {
-    echo "🐰 Installing Burrow CLI..."
-    echo ""
-
     OS=$(detect_os)
     ARCH=$(detect_arch)
 
@@ -264,16 +347,18 @@ main() {
         exit 1
     fi
 
-    echo "Detected: ${OS}-${ARCH}"
+    log "Platform: ${OS}-${ARCH}"
 
     # Construct binary name
-    BINARY_FILE="burrow-${OS}-${ARCH}"
+    BINARY_FILE="${BINARY_NAME}-${OS}-${ARCH}"
 
     # Handle PR installation
     if [ -n "$PR_NUMBER" ]; then
         install_from_pr "$PR_NUMBER" "$OS" "$ARCH"
         exit 0
     fi
+
+    echo "Installing Burrow..."
 
     # Determine version to install
     if [ -n "$REQUESTED_VERSION" ]; then
@@ -282,16 +367,28 @@ main() {
             v*) VERSION="$REQUESTED_VERSION" ;;
             *)  VERSION="v${REQUESTED_VERSION}" ;;
         esac
-        echo "Requested version: ${VERSION}"
+        log "Version: ${VERSION}"
+    elif [ -n "$PREVIEW_MODE" ]; then
+        log "Fetching latest preview release..."
+        VERSION=$(get_latest_preview_version)
+
+        if [ -z "$VERSION" ]; then
+            echo "Error: No preview releases available"
+            exit 1
+        fi
+        log "Preview: ${VERSION}"
     else
-        echo "Fetching latest release..."
+        log "Fetching latest release..."
         VERSION=$(get_latest_version)
 
         if [ -z "$VERSION" ]; then
             echo "Error: No stable releases available yet."
+            echo ""
+            echo "To install the latest preview release, run:"
+            echo "  curl -fsSL https://safia.rocks/burrow/install.sh | sh -s -- --preview"
             exit 1
         fi
-        echo "Latest version: ${VERSION}"
+        log "Version: ${VERSION}"
     fi
 
     # Download URL
@@ -301,7 +398,8 @@ main() {
     mkdir -p "$INSTALL_DIR"
 
     # Download binary
-    echo "Downloading ${BINARY_FILE}..."
+    log "Downloading ${BINARY_FILE}..."
+    log "URL: ${DOWNLOAD_URL}"
     if ! curl -fsSL "$DOWNLOAD_URL" -o "${INSTALL_DIR}/${BINARY_NAME}"; then
         echo "Error: Failed to download ${BINARY_FILE}"
         echo "URL: ${DOWNLOAD_URL}"
@@ -311,33 +409,12 @@ main() {
     # Make executable
     chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
 
-    echo ""
-    echo "✅ Burrow ${VERSION} installed successfully to ${INSTALL_DIR}/${BINARY_NAME}"
-    echo ""
-
-    # Detect current shell
-    CURRENT_SHELL=$(detect_shell)
-    SHELL_CONFIG=$(get_shell_config "$CURRENT_SHELL")
-    PATH_EXPORT=$(get_path_export_cmd "$CURRENT_SHELL" "$INSTALL_DIR")
-    SOURCE_CMD=$(get_source_cmd "$CURRENT_SHELL" "$SHELL_CONFIG")
-
-    # Check if install dir is in PATH
-    case ":$PATH:" in
-        *":${INSTALL_DIR}:"*)
-            echo "Burrow is ready to use! Run 'burrow --help' to get started."
-            ;;
-        *)
-            echo "To use burrow, add it to your PATH by running:"
-            echo ""
-            echo "  echo '${PATH_EXPORT}' >> ${SHELL_CONFIG}"
-            echo ""
-            echo "Then restart your shell or run:"
-            echo ""
-            echo "  ${SOURCE_CMD}"
-            echo ""
-            echo "After that, run 'burrow --help' to get started."
-            ;;
-    esac
+    if [ -n "$PREVIEW_MODE" ]; then
+        echo "🐰 Burrow ${VERSION} (preview) installed to ${INSTALL_DIR}/${BINARY_NAME}"
+    else
+        echo "🐰 Burrow ${VERSION} installed to ${INSTALL_DIR}/${BINARY_NAME}"
+    fi
+    show_path_instructions
 }
 
 main "$@"
