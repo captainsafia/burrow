@@ -873,4 +873,121 @@ describe("Integration Tests", () => {
       expect(parsed.API_KEY_V2).toBe("value");
     });
   });
+
+  describe("Redaction flag", () => {
+    test("Get command with --redact flag in plain format", async () => {
+      await runBurrow(["set", "SECRET=mysecretvalue"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const result = await runBurrow(["get", "SECRET", "--redact"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe("[REDACTED]");
+      expect(result.stdout).not.toContain("mysecretvalue");
+    });
+
+    test("Get command with --redact flag in JSON format", async () => {
+      await runBurrow(["set", "SECRET=mysecretvalue"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const result = await runBurrow(["get", "SECRET", "--format", "json", "--redact"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(result.exitCode).toBe(0);
+      const parsed = JSON.parse(result.stdout);
+      expect(parsed.key).toBe("SECRET");
+      expect(parsed.value).toBe("[REDACTED]");
+      expect(parsed.sourcePath).toBe(ctx.repo);
+      expect(result.stdout).not.toContain("mysecretvalue");
+    });
+
+    test("Get command without --redact flag shows actual value", async () => {
+      await runBurrow(["set", "SECRET=mysecretvalue"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const result = await runBurrow(["get", "SECRET"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe("mysecretvalue");
+    });
+
+    test("List command with --redact flag in plain format", async () => {
+      await runBurrow(["set", "SECRET1=value1"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      await runBurrow(["set", "SECRET2=value2"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const result = await runBurrow(["list", "--redact"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("SECRET1=[REDACTED]");
+      expect(result.stdout).toContain("SECRET2=[REDACTED]");
+      expect(result.stdout).not.toContain("value1");
+      expect(result.stdout).not.toContain("value2");
+    });
+
+    test("List command with --redact flag in JSON format", async () => {
+      await runBurrow(["set", "SECRET1=value1"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      await runBurrow(["set", "SECRET2=value2"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const result = await runBurrow(["list", "--format", "json", "--redact"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(result.exitCode).toBe(0);
+      const parsed = JSON.parse(result.stdout);
+      expect(parsed).toHaveLength(2);
+      
+      const secret1 = parsed.find((s: { key: string }) => s.key === "SECRET1");
+      const secret2 = parsed.find((s: { key: string }) => s.key === "SECRET2");
+      
+      expect(secret1.value).toBe("[REDACTED]");
+      expect(secret2.value).toBe("[REDACTED]");
+      expect(result.stdout).not.toContain("value1");
+      expect(result.stdout).not.toContain("value2");
+    });
+
+    test("List command without --redact flag shows actual values", async () => {
+      await runBurrow(["set", "SECRET1=value1"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const result = await runBurrow(["list"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("SECRET1=value1");
+    });
+  });
 });

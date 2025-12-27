@@ -55,7 +55,8 @@ program
   .description("Get a secret resolved from cwd ancestry")
   .argument("<key>", "Secret key to retrieve")
   .addOption(new Option("-f, --format <format>", "Output format").choices(["plain", "json"]).default("plain"))
-  .action(async (key: string, options: { format: string }) => {
+  .option("--redact", "Redact the secret value in output")
+  .action(async (key: string, options: { format: string; redact?: boolean }) => {
     using client = new BurrowClient();
 
     try {
@@ -66,12 +67,14 @@ program
         process.exit(1);
       }
 
+      const displayValue = options.redact ? "[REDACTED]" : secret.value;
+
       if (options.format === "json") {
         console.log(
           JSON.stringify(
             {
               key: secret.key,
-              value: secret.value,
+              value: displayValue,
               sourcePath: secret.sourcePath,
             },
             null,
@@ -79,7 +82,7 @@ program
           )
         );
       } else {
-        console.log(secret.value);
+        console.log(displayValue);
       }
     } catch (error) {
       console.error(`Error: ${(error as Error).message}`);
@@ -91,7 +94,8 @@ program
   .command("list")
   .description("List all resolved secrets for cwd")
   .addOption(new Option("-f, --format <format>", "Output format").choices(["plain", "json"]).default("plain"))
-  .action(async (options: { format: string }) => {
+  .option("--redact", "Redact the secret values in output")
+  .action(async (options: { format: string; redact?: boolean }) => {
     using client = new BurrowClient();
 
     try {
@@ -109,13 +113,14 @@ program
       if (options.format === "json") {
         const output = secrets.map((s) => ({
           key: s.key,
-          value: s.value,
+          value: options.redact ? "[REDACTED]" : s.value,
           sourcePath: s.sourcePath,
         }));
         console.log(JSON.stringify(output, null, 2));
       } else {
         for (const secret of secrets) {
-          console.log(`${secret.key}=${secret.value} (from ${secret.sourcePath})`);
+          const displayValue = options.redact ? "[REDACTED]" : secret.value;
+          console.log(`${secret.key}=${displayValue} (from ${secret.sourcePath})`);
         }
       }
     } catch (error) {
