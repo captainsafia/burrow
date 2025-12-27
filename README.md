@@ -32,6 +32,8 @@ burrow set DATABASE_URL=postgres://localhost/mydb --path ~/projects
 ```bash
 burrow get API_KEY
 burrow get API_KEY --format json
+# Redact the secret value in output
+burrow get API_KEY --redact
 ```
 
 ### List all secrets
@@ -39,6 +41,8 @@ burrow get API_KEY --format json
 ```bash
 burrow list
 burrow list --format json
+# Redact secret values in output
+burrow list --redact
 ```
 
 ### Export to your shell
