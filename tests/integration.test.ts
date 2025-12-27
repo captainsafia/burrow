@@ -542,6 +542,23 @@ describe("Integration Tests", () => {
       const parsed = JSON.parse(exportResult.stdout);
       expect(parsed.API_KEY).toBeUndefined();
     });
+
+    test("Export with --copy flag still displays output", async () => {
+      await runBurrow(["set", "KEY=value"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      // The --copy flag may fail in CI environments without clipboard,
+      // but the output should still be displayed
+      const exportResult = await runBurrow(["export", "--format", "bash", "--copy"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      // The output should still be displayed even if clipboard copy fails
+      expect(exportResult.stdout).toContain("KEY=");
+    });
   });
 
   describe("List/get UX + exit codes", () => {
