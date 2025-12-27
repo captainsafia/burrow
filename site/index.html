@@ -1,21 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>burrow - directory-scoped secrets manager</title>
-    <meta name="description" content="A platform-agnostic, directory-scoped secrets manager. Store secrets outside your repos, inherit them through directory ancestry.">
+    <meta name="description"
+        content="A platform-agnostic, directory-scoped secrets manager. Store secrets outside your repos, inherit them through directory ancestry.">
 
     <!-- Open Graph / Social Media Meta Tags -->
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://safia.rocks/burrow/">
     <meta property="og:title" content="burrow - directory-scoped secrets manager">
-    <meta property="og:description" content="A platform-agnostic, directory-scoped secrets manager. Store secrets outside your repos, inherit them through directory ancestry.">
+    <meta property="og:description"
+        content="A platform-agnostic, directory-scoped secrets manager. Store secrets outside your repos, inherit them through directory ancestry.">
 
     <!-- Twitter Card Meta Tags -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="burrow - directory-scoped secrets manager">
-    <meta name="twitter:description" content="A platform-agnostic, directory-scoped secrets manager. Store secrets outside your repos, inherit them through directory ancestry.">
+    <meta name="twitter:description"
+        content="A platform-agnostic, directory-scoped secrets manager. Store secrets outside your repos, inherit them through directory ancestry.">
 
     <style>
         * {
@@ -23,32 +27,32 @@
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
             line-height: 1.6;
             color: #1f2937;
             background: #ffffff;
         }
-        
+
         .container {
             max-width: 800px;
             margin: 0 auto;
             padding: 0 20px;
         }
-        
+
         header {
             border-bottom: 1px solid #e5e7eb;
             padding: 20px 0;
             margin-bottom: 60px;
         }
-        
+
         .header-content {
             display: flex;
             align-items: center;
             justify-content: space-between;
         }
-        
+
         .logo {
             display: flex;
             align-items: center;
@@ -56,45 +60,45 @@
             text-decoration: none;
             color: #1f2937;
         }
-        
+
         .logo h1 {
             font-size: 24px;
             font-weight: 600;
             color: #92400e;
         }
-        
+
         .header-links {
             display: flex;
             gap: 24px;
         }
-        
+
         .header-links a {
             color: #4b5563;
             text-decoration: none;
             font-size: 14px;
         }
-        
+
         .header-links a:hover {
             color: #92400e;
         }
-        
+
         .hero {
             margin-bottom: 80px;
         }
-        
+
         .hero h2 {
             font-size: 48px;
             font-weight: 600;
             margin-bottom: 20px;
             color: #111827;
         }
-        
+
         .hero p {
             font-size: 20px;
             color: #6b7280;
             margin-bottom: 32px;
         }
-        
+
         .install-cmd {
             background: #f9fafb;
             border: 1px solid #e5e7eb;
@@ -143,18 +147,18 @@
             width: 16px;
             height: 16px;
         }
-        
+
         section {
             margin-bottom: 80px;
         }
-        
+
         h3 {
             font-size: 32px;
             font-weight: 600;
             margin-bottom: 24px;
             color: #111827;
         }
-        
+
         h4 {
             font-size: 20px;
             font-weight: 600;
@@ -162,12 +166,12 @@
             margin-bottom: 12px;
             color: #78350f;
         }
-        
+
         p {
             margin-bottom: 16px;
             color: #4b5563;
         }
-        
+
         code {
             background: #f9fafb;
             border: 1px solid #e5e7eb;
@@ -177,7 +181,7 @@
             font-size: 14px;
             color: #92400e;
         }
-        
+
         pre {
             background: #1f2937;
             border-radius: 6px;
@@ -185,25 +189,25 @@
             margin: 16px 0 24px 0;
             overflow-x: auto;
         }
-        
+
         pre code {
             background: none;
             border: none;
             color: #d1d5db;
             padding: 0;
         }
-        
+
         .command-group {
             margin-bottom: 32px;
         }
-        
+
         table {
             width: 100%;
             border-collapse: collapse;
             margin: 24px 0;
             font-size: 14px;
         }
-        
+
         th {
             text-align: left;
             padding: 12px;
@@ -212,18 +216,18 @@
             font-weight: 600;
             color: #92400e;
         }
-        
+
         td {
             padding: 12px;
             border-bottom: 1px solid #e5e7eb;
         }
-        
+
         td:first-child {
             font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
             font-size: 13px;
             color: #92400e;
         }
-        
+
         footer {
             border-top: 1px solid #e5e7eb;
             padding: 40px 0;
@@ -232,12 +236,12 @@
             color: #6b7280;
             font-size: 14px;
         }
-        
+
         footer a {
             color: #92400e;
             text-decoration: none;
         }
-        
+
         footer a:hover {
             text-decoration: underline;
         }
@@ -295,7 +299,8 @@
                 font-size: 12px;
             }
 
-            th, td {
+            th,
+            td {
                 padding: 8px;
             }
 
@@ -331,6 +336,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <header>
@@ -349,14 +355,17 @@
         <section class="hero">
             <div class="hero-text">
                 <h2>Directory-scoped secrets manager</h2>
-                <p>Store secrets outside your repos, inherit them through directory ancestry.</p>
+                <p>Secrets are stored outside your repos in a local SQLite store and exportable to various formats via
+                    the CLI.</p>
             </div>
 
             <div class="install-cmd">
                 <code id="install-code">curl -fsSL https://safia.rocks/burrow/install.sh | sh</code>
                 <button class="copy-btn" onclick="copyInstallCommand()" aria-label="Copy to clipboard">
-                    <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                     </svg>
                     <span id="copy-text">Copy</span>
                 </button>
@@ -366,27 +375,33 @@
 
         <section>
             <h3>How It Works</h3>
-            
-            <p>Burrow stores secrets in your user profile directory, outside of any repository. When you request secrets for a directory, burrow finds all ancestor paths with stored secrets and merges them from shallowest to deepest.</p>
+
+            <p>Burrow stores secrets in a SQLite store in your user profile directory, outside of any repository. When
+                you request secrets for a directory, burrow finds all ancestor paths with stored secrets and merges them
+                from shallowest to deepest. Burrow lets you export secrets into .env files or shell-specific export
+                scripts for easy integration into the rest of your deployment environment. Note: secrets are stored in
+                plain-text and not encrypted at rest.</p>
 
             <div class="concept-diagram">
-                <span class="path">~/projects/</span>                     <span class="comment"># DATABASE_URL, API_KEY defined here</span><br>
-                <span class="path">├── app-a/</span>                      <span class="comment"># inherits both secrets</span><br>
-                <span class="path">├── app-b/</span>                      <span class="comment"># inherits both, overrides API_KEY</span><br>
-                <span class="path">│   └── tests/</span>                  <span class="comment"># blocks API_KEY (uses none)</span><br>
-                <span class="path">└── app-c/</span>                      <span class="comment"># inherits both secrets</span>
+                <span class="path">~/projects/</span> <span class="comment"># DATABASE_URL, API_KEY defined
+                    here</span><br>
+                <span class="path">├── app-a/</span> <span class="comment"># inherits both secrets</span><br>
+                <span class="path">├── app-b/</span> <span class="comment"># inherits both, overrides API_KEY</span><br>
+                <span class="path">│ └── tests/</span> <span class="comment"># blocks API_KEY (uses none)</span><br>
+                <span class="path">└── app-c/</span> <span class="comment"># inherits both secrets</span>
             </div>
 
             <p><strong>Secrets are stored in:</strong></p>
             <ul style="margin-left: 24px; margin-bottom: 16px; color: #4b5563;">
-                <li><strong>Linux/macOS:</strong> <code>$XDG_CONFIG_HOME/burrow</code> or <code>~/.config/burrow</code></li>
+                <li><strong>Linux/macOS:</strong> <code>$XDG_CONFIG_HOME/burrow</code> or <code>~/.config/burrow</code>
+                </li>
                 <li><strong>Windows:</strong> <code>%APPDATA%\burrow</code></li>
             </ul>
         </section>
 
         <section>
             <h3>Usage</h3>
-            
+
             <div class="command-group">
                 <h4>Set a secret</h4>
                 <p>Set a secret for the current directory:</p>
@@ -521,11 +536,11 @@ try {
                 const btn = document.querySelector('.copy-btn');
                 const text = document.getElementById('copy-text');
                 const icon = document.getElementById('copy-icon');
-                
+
                 btn.classList.add('copied');
                 text.textContent = 'Copied!';
                 icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />';
-                
+
                 setTimeout(() => {
                     btn.classList.remove('copied');
                     text.textContent = 'Copy';
@@ -535,4 +550,5 @@ try {
         }
     </script>
 </body>
+
 </html>
