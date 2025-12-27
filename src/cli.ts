@@ -2,6 +2,7 @@
 
 import { Command, Option } from "commander";
 import { BurrowClient, type ExportFormat } from "./api.ts";
+import clipboardy from "clipboardy";
 
 // Read version from package.json at build time
 const packageJson = await import("../package.json");
@@ -211,7 +212,8 @@ program
   .addOption(new Option("-f, --format <format>", "Export format (shell auto-detects your shell)").choices(["shell", "bash", "fish", "powershell", "cmd", "dotenv", "json"]).default("shell"))
   .option("-p, --path <dir>", "Directory to resolve from (default: cwd)", validatePath)
   .option("--sources", "Include source paths in json output")
-  .action(async (options: { format: string; path?: string; sources?: boolean }) => {
+  .option("--copy", "Copy the output to clipboard")
+  .action(async (options: { format: string; path?: string; sources?: boolean; copy?: boolean }) => {
     using client = new BurrowClient();
     let format: ExportFormat;
 
@@ -229,6 +231,10 @@ program
         includeSources: options.sources,
       });
       console.log(output);
+
+      if (options.copy) {
+        await clipboardy.write(output);
+      }
     } catch (error) {
       console.error(`Error: ${(error as Error).message}`);
       process.exit(1);
