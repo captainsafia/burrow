@@ -233,7 +233,7 @@ program
         } catch (clipboardError) {
           // Clipboard operation failed, but output was still displayed
           // This is expected in headless environments or when clipboard tools are unavailable
-          // Silently ignore the error since the primary goal (displaying output) succeeded
+          console.error("Warning: Could not copy to clipboard");
         }
       }
     } catch (error) {
