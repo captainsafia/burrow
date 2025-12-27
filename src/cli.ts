@@ -233,7 +233,13 @@ program
       console.log(output);
 
       if (options.copy) {
-        await clipboardy.write(output);
+        try {
+          await clipboardy.write(output);
+        } catch (clipboardError) {
+          // Clipboard operation failed, but output was still displayed
+          // This is expected in headless environments or when clipboard tools are unavailable
+          // Silently ignore the error since the primary goal (displaying output) succeeded
+        }
       }
     } catch (error) {
       console.error(`Error: ${(error as Error).message}`);
