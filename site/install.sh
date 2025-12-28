@@ -233,9 +233,32 @@ install_from_pr() {
     OS="$2"
     ARCH="$3"
 
-    echo "Installing Burrow from PR #${PR_NUM}..."
+    echo "Fetching PR #${PR_NUM} artifacts..."
 
-    ARTIFACT_NAME="${BINARY_NAME}-${OS}-${ARCH}"
+    # Artifact name includes PR number for easy lookup
+    ARTIFACT_NAME="${BINARY_NAME}-pr-${PR_NUM}-${OS}-${ARCH}"
+    BINARY_IN_ARTIFACT="${BINARY_NAME}-${OS}-${ARCH}"
+
+    # Fetch artifacts from GitHub API
+    ARTIFACTS_JSON=$(curl -fsSL "https://api.github.com/repos/${REPO}/actions/artifacts?per_page=100" 2>/dev/null)
+
+    if [ -z "$ARTIFACTS_JSON" ]; then
+        echo "Error: Could not fetch artifacts from GitHub"
+        exit 1
+    fi
+
+    # Find the artifact for this PR and platform
+    FOUND_ARTIFACT=$(echo "$ARTIFACTS_JSON" | grep -o "\"${ARTIFACT_NAME}\"" | head -1)
+
+    if [ -z "$FOUND_ARTIFACT" ]; then
+        echo "Error: No artifacts found for PR #${PR_NUM} on ${OS}-${ARCH}"
+        echo ""
+        echo "Make sure the PR has a successful build. You can check at:"
+        echo "  https://github.com/${REPO}/pull/${PR_NUM}"
+        exit 1
+    fi
+
+    log "Found artifact: ${ARTIFACT_NAME}"
 
     # Check if gh CLI is available
     if ! command -v gh >/dev/null 2>&1; then
@@ -262,54 +285,23 @@ install_from_pr() {
     TEMP_DIR=$(mktemp -d)
     trap 'rm -rf "$TEMP_DIR"' EXIT
 
-    # Get the PR's head SHA using GitHub API
-    log "Looking up PR #${PR_NUM}..."
-    PR_JSON=$(curl -fsSL "https://api.github.com/repos/${REPO}/pulls/${PR_NUM}" 2>/dev/null)
+    echo "Downloading ${ARTIFACT_NAME}..."
 
-    if [ -z "$PR_JSON" ]; then
-        echo "Error: Could not fetch PR #${PR_NUM}"
-        echo "Make sure the PR exists at:"
-        echo "  https://github.com/${REPO}/pull/${PR_NUM}"
-        exit 1
-    fi
-
-    HEAD_SHA=$(echo "$PR_JSON" | grep '"sha":' | head -1 | sed -E 's/.*"sha": *"([^"]+)".*/\1/')
-
-    if [ -z "$HEAD_SHA" ]; then
-        echo "Error: Could not determine head SHA for PR #${PR_NUM}"
-        exit 1
-    fi
-
-    log "Found PR head SHA: ${HEAD_SHA}"
-
-    # Find successful workflow runs for this SHA using GitHub API
-    RUNS_JSON=$(curl -fsSL "https://api.github.com/repos/${REPO}/actions/runs?head_sha=${HEAD_SHA}&status=success&per_page=10" 2>/dev/null)
-
-    RUN_ID=$(echo "$RUNS_JSON" | grep '"id":' | head -1 | sed -E 's/.*"id": *([0-9]+).*/\1/')
-
-    if [ -z "$RUN_ID" ]; then
-        echo "Error: Could not find a successful workflow run for PR #${PR_NUM}"
-        echo "Make sure the PR has a successful build. You can check at:"
-        echo "  https://github.com/${REPO}/pull/${PR_NUM}"
-        exit 1
-    fi
-
-    log "Found workflow run: ${RUN_ID}"
-    log "Downloading artifact: ${ARTIFACT_NAME}"
-
-    # Download the artifact using gh CLI (requires authentication)
-    if ! gh run download --repo "${REPO}" --name "${ARTIFACT_NAME}" --dir "$TEMP_DIR" "$RUN_ID" 2>/dev/null; then
+    # Download the artifact using gh CLI
+    if ! gh run download --repo "${REPO}" --name "${ARTIFACT_NAME}" --dir "$TEMP_DIR" 2>/dev/null; then
         echo "Error: Failed to download artifact '${ARTIFACT_NAME}'"
-        echo "The artifact may have expired or may not exist for this platform."
+        echo "The artifact may have expired (artifacts expire after 30 days)."
+        echo ""
+        echo "Check the PR for available artifacts:"
+        echo "  https://github.com/${REPO}/pull/${PR_NUM}"
         exit 1
     fi
 
     # Find the binary in the downloaded artifact
-    # The artifact may contain either the binary name directly or with platform suffix
     if [ -f "${TEMP_DIR}/${BINARY_NAME}" ]; then
         DOWNLOADED_BINARY="${TEMP_DIR}/${BINARY_NAME}"
-    elif [ -f "${TEMP_DIR}/${ARTIFACT_NAME}" ]; then
-        DOWNLOADED_BINARY="${TEMP_DIR}/${ARTIFACT_NAME}"
+    elif [ -f "${TEMP_DIR}/${BINARY_IN_ARTIFACT}" ]; then
+        DOWNLOADED_BINARY="${TEMP_DIR}/${BINARY_IN_ARTIFACT}"
     else
         echo "Error: Binary not found in artifact"
         echo "Available files:"
