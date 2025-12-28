@@ -2,6 +2,10 @@
 
 Burrow is a platform-agnostic, directory-scoped secrets manager. Secrets are stored outside your repos in a local SQLite store and exportable to various formats via the CLI. For a nicer dev experience, Burrow currently stores secrets in a plain-text format outside the target repo, which means that secrets can still be leaked to other users on your machine or people who gain access to your device. But, for your day-to-day dev use, this beats keeping secrets in gitignored files in your repo.
 
+<p align="center">
+  <img src="demo.gif" alt="burrow demo" width="600">
+</p>
+
 ```
 ~/projects/                     # DATABASE_URL, API_KEY defined here
 ├── app-a/                      # inherits both secrets
