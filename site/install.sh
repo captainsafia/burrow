@@ -389,17 +389,25 @@ main() {
     # Create install directory
     mkdir -p "$INSTALL_DIR"
 
-    # Download binary
+    # Create temp file for download (avoids "text file busy" error when updating)
+    TEMP_BINARY=$(mktemp)
+    trap 'rm -f "$TEMP_BINARY"' EXIT
+
+    # Download binary to temp location first
     log "Downloading ${BINARY_FILE}..."
     log "URL: ${DOWNLOAD_URL}"
-    if ! curl -fsSL "$DOWNLOAD_URL" -o "${INSTALL_DIR}/${BINARY_NAME}"; then
+    if ! curl -fsSL "$DOWNLOAD_URL" -o "$TEMP_BINARY"; then
         echo "Error: Failed to download ${BINARY_FILE}"
         echo "URL: ${DOWNLOAD_URL}"
+        rm -f "$TEMP_BINARY"
         exit 1
     fi
 
     # Make executable
-    chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
+    chmod +x "$TEMP_BINARY"
+
+    # Move to final location (atomic operation, works even if binary is running)
+    mv -f "$TEMP_BINARY" "${INSTALL_DIR}/${BINARY_NAME}"
 
     if [ -n "$PREVIEW_MODE" ]; then
         echo "🐰 Burrow ${VERSION} (preview) installed to ${INSTALL_DIR}/${BINARY_NAME}"
