@@ -2,7 +2,6 @@ import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { mkdir, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { $ } from "bun";
 
 interface RunResult {
   stdout: string;
