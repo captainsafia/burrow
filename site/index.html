@@ -405,8 +405,12 @@
 
             <div class="command-group">
                 <h4>Set a secret</h4>
-                <p>Set a secret for the current directory:</p>
+                <p>Set a secret using KEY=VALUE format:</p>
                 <pre><code>burrow set API_KEY=sk-live-abc123</code></pre>
+                <p>Or use separate arguments for key and value:</p>
+                <pre><code>burrow set API_KEY sk-live-abc123</code></pre>
+                <p>Omit the value to be prompted securely via stdin:</p>
+                <pre><code>burrow set API_KEY</code></pre>
                 <p>Set a secret for a specific path:</p>
                 <pre><code>burrow set DATABASE_URL=postgres://localhost/mydb --path ~/projects</code></pre>
             </div>
@@ -467,8 +471,8 @@
                 </thead>
                 <tbody>
                     <tr>
-                        <td>burrow set &lt;key=value&gt;</td>
-                        <td>Set a secret at the given path</td>
+                        <td>burrow set &lt;key&gt; [value]</td>
+                        <td>Set a secret at the given path (prompts for value if not provided)</td>
                     </tr>
                     <tr>
                         <td>burrow get &lt;key&gt;</td>

@@ -27,7 +27,16 @@ curl -fsSL https://safia.rocks/burrow/install.sh | sh
 ### Set a secret
 
 ```bash
+# KEY=VALUE format
 burrow set API_KEY=sk-live-abc123
+
+# KEY VALUE format (separate arguments)
+burrow set API_KEY sk-live-abc123
+
+# KEY only (prompts for value)
+burrow set API_KEY
+
+# With a specific path
 burrow set DATABASE_URL=postgres://localhost/mydb --path ~/projects
 ```
 
