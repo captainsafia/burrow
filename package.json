@@ -52,6 +52,7 @@
   "license": "MIT",
   "dependencies": {
     "clipboardy": "^5.0.2",
-    "commander": "^14.0.2"
+    "commander": "^14.0.2",
+    "gh-release-update-notifier": "^1.0.0"
   }
 }

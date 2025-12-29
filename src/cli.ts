@@ -3,9 +3,24 @@
 import { Command, Option } from "commander";
 import { BurrowClient, type ExportFormat } from "./api.ts";
 import clipboardy from "clipboardy";
+import { ReleaseNotifier } from "gh-release-update-notifier";
+import { spawn } from "child_process";
+import { platform } from "os";
+import { join } from "path";
+import { getConfigDir } from "./platform/index.ts";
 
 // Read version from package.json at build time
 const packageJson = await import("../package.json");
+
+// GitHub repo for update checks
+const GITHUB_REPO = "captainsafia/burrow";
+
+// Create release notifier with 1 hour check interval and cache in config dir
+const notifier = new ReleaseNotifier({
+  repo: GITHUB_REPO,
+  checkInterval: 3600000, // 1 hour
+  cacheFilePath: join(getConfigDir(), "update-check-cache.json"),
+});
 
 function validatePath(value: string): string {
   if (value.trim() === "") {
@@ -247,4 +262,132 @@ program
     }
   });
 
-program.parse();
+program
+  .command("update")
+  .description("Update burrow to the latest or a specific version")
+  .argument("[version]", "Target version to install (e.g., v1.2.0)")
+  .option("--check", "Only check for updates without installing")
+  .option("--preview", "Update to the latest preview/pre-release version")
+  .action(async (version: string | undefined, options: { check?: boolean; preview?: boolean }) => {
+    const currentVersion = packageJson.version;
+    const isPrerelease = currentVersion.includes("-");
+
+    try {
+      if (options.check) {
+        // Just check for updates
+        const result = await notifier.checkVersion(currentVersion, isPrerelease);
+
+        if (result.updateAvailable) {
+          console.log(`Update available: ${currentVersion} → ${result.latestVersion}`);
+          console.log(`Run 'burrow update' to install the latest version`);
+        } else {
+          console.log(`You're on the latest version (${currentVersion})`);
+        }
+        return;
+      }
+
+      // Determine target version
+      let targetVersion: string | undefined = version;
+
+      if (!targetVersion) {
+        // No version specified, check for latest
+        if (options.preview) {
+          const release = await notifier.getLatestPrerelease();
+          if (release) {
+            targetVersion = release.tagName;
+          } else {
+            console.error("Error: No preview releases available");
+            process.exit(1);
+          }
+        } else {
+          const release = await notifier.getLatestRelease();
+          if (release) {
+            targetVersion = release.tagName;
+          } else {
+            console.error("Error: No releases available");
+            process.exit(1);
+          }
+        }
+      }
+
+      // Normalize version (ensure it starts with 'v')
+      if (!targetVersion.startsWith("v")) {
+        targetVersion = `v${targetVersion}`;
+      }
+
+      // Check if already on this version
+      const normalizedCurrent = currentVersion.startsWith("v") ? currentVersion : `v${currentVersion}`;
+      if (targetVersion === normalizedCurrent) {
+        console.log(`Already on version ${currentVersion}`);
+        return;
+      }
+
+      console.log(`Updating burrow: ${currentVersion} → ${targetVersion}`);
+
+      // Run the install script with the target version
+      const installUrl = "https://safia.rocks/burrow/install.sh";
+      const isWindows = platform() === "win32";
+
+      if (isWindows) {
+        // On Windows, use PowerShell to run curl and sh (via WSL or Git Bash)
+        console.error("Error: Automatic updates are not supported on Windows.");
+        console.error(`Please download the new version manually from:`);
+        console.error(`  https://github.com/${GITHUB_REPO}/releases/tag/${targetVersion}`);
+        process.exit(1);
+      }
+
+      const args = options.preview ? ["--preview"] : [targetVersion];
+      const curlCmd = `curl -fsSL ${installUrl} | sh -s -- ${args.join(" ")}`;
+
+      const child = spawn("sh", ["-c", curlCmd], {
+        stdio: "inherit",
+      });
+
+      child.on("close", (code) => {
+        if (code === 0) {
+          console.log(`\nSuccessfully updated to ${targetVersion}`);
+        } else {
+          console.error(`\nUpdate failed with exit code ${code}`);
+          process.exit(code ?? 1);
+        }
+      });
+
+      child.on("error", (err) => {
+        console.error(`Error running update: ${err.message}`);
+        process.exit(1);
+      });
+    } catch (error) {
+      console.error(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+// Check for updates after command execution (non-blocking)
+async function checkForUpdates(): Promise<void> {
+  try {
+    const currentVersion = packageJson.version;
+    const isPrerelease = currentVersion.includes("-");
+    const result = await notifier.checkVersion(currentVersion, isPrerelease);
+
+    if (result.updateAvailable) {
+      console.error("");
+      console.error(`Update available: ${currentVersion} → ${result.latestVersion}`);
+      console.error(`Run 'burrow update ${result.latestVersion}' to install the latest version`);
+    }
+  } catch {
+    // Silently ignore update check errors
+  }
+}
+
+// Parse arguments and run update check after command completes
+async function main(): Promise<void> {
+  await program.parseAsync();
+
+  // Run update check after command execution (except for 'update' command itself)
+  const command = process.argv[2];
+  if (command !== "update" && command !== "--version" && command !== "-V" && command !== "--help" && command !== "-h") {
+    await checkForUpdates();
+  }
+}
+
+main();
