@@ -7,6 +7,7 @@ import { ReleaseNotifier } from "gh-release-update-notifier";
 import { spawn } from "child_process";
 import { platform } from "os";
 import { join } from "path";
+import * as readline from "readline";
 import { getConfigDir } from "./platform/index.ts";
 
 // Read version from package.json at build time
@@ -29,6 +30,20 @@ function validatePath(value: string): string {
   return value;
 }
 
+function promptForValue(key: string): Promise<string> {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stderr,
+    });
+
+    rl.question(`Enter value for ${key}: `, (answer) => {
+      rl.close();
+      resolve(answer);
+    });
+  });
+}
+
 const program = new Command();
 
 program
@@ -39,23 +54,35 @@ program
 program
   .command("set")
   .description("Set a secret at the given path")
-  .argument("<key=value>", "Secret in KEY=VALUE format")
+  .argument("<key>", "Secret key (or KEY=VALUE format)")
+  .argument("[value]", "Secret value (prompts if not provided)")
   .option("-p, --path <dir>", "Directory to scope the secret to (default: cwd)", validatePath)
-  .action(async (keyValue: string, options: { path?: string }) => {
+  .action(async (keyOrKeyValue: string, valueArg: string | undefined, options: { path?: string }) => {
     using client = new BurrowClient();
-    const eqIndex = keyValue.indexOf("=");
 
-    if (eqIndex === -1) {
-      console.error("Error: Argument must be in KEY=VALUE format");
-      process.exit(1);
+    let key: string;
+    let value: string;
+
+    const eqIndex = keyOrKeyValue.indexOf("=");
+
+    if (eqIndex !== -1) {
+      // KEY=VALUE format
+      key = keyOrKeyValue.slice(0, eqIndex);
+      value = keyOrKeyValue.slice(eqIndex + 1);
+    } else if (valueArg !== undefined) {
+      // KEY VALUE format
+      key = keyOrKeyValue;
+      value = valueArg;
+    } else {
+      // KEY format - prompt for value
+      key = keyOrKeyValue;
+      value = await promptForValue(key);
     }
 
-    const key = keyValue.slice(0, eqIndex);
     if (key.trim() === "") {
       console.error("Error: Key cannot be empty");
       process.exit(1);
     }
-    const value = keyValue.slice(eqIndex + 1);
 
     try {
       await client.set(key, value, { path: options.path });

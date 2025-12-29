@@ -1,6 +1,6 @@
 {
   "name": "@captainsafia/burrow",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Platform-agnostic, directory-scoped secrets manager",
   "type": "module",
   "main": "dist/api.js",

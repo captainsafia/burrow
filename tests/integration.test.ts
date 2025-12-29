@@ -22,18 +22,26 @@ const CLI_PATH = join(import.meta.dir, "..", "src", "cli.ts");
 
 async function runBurrow(
   args: string[],
-  options: { cwd: string; configDir: string }
+  options: { cwd: string; configDir: string; stdin?: string }
 ): Promise<RunResult> {
-  const result = await $`bun ${CLI_PATH} ${args}`
-    .cwd(options.cwd)
-    .env({ ...process.env, BURROW_CONFIG_DIR: options.configDir })
-    .nothrow()
-    .quiet();
+  const proc = Bun.spawn(["bun", CLI_PATH, ...args], {
+    cwd: options.cwd,
+    env: { ...process.env, BURROW_CONFIG_DIR: options.configDir },
+    stdin: options.stdin !== undefined ? new Blob([options.stdin]) : "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+  const exitCode = await proc.exited;
 
   return {
-    stdout: result.stdout.toString().trim(),
-    stderr: result.stderr.toString().trim(),
-    exitCode: result.exitCode,
+    stdout: stdout.trim(),
+    stderr: stderr.trim(),
+    exitCode,
   };
 }
 
@@ -172,6 +180,149 @@ describe("Integration Tests", () => {
         configDir: ctx.configDir,
       });
       expect(exportResult.stdout).toContain("A=");
+    });
+  });
+
+  describe("Set command formats", () => {
+    test("set KEY=VALUE format works", async () => {
+      const set = await runBurrow(["set", "API_KEY=secret123"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(set.exitCode).toBe(0);
+
+      const get = await runBurrow(["get", "API_KEY"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).toBe(0);
+      expect(get.stdout).toBe("secret123");
+    });
+
+    test("set KEY VALUE format works", async () => {
+      const set = await runBurrow(["set", "API_KEY", "secret456"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(set.exitCode).toBe(0);
+
+      const get = await runBurrow(["get", "API_KEY"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).toBe(0);
+      expect(get.stdout).toBe("secret456");
+    });
+
+    test("set KEY VALUE format with spaces in value", async () => {
+      const set = await runBurrow(["set", "MESSAGE", "hello world"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(set.exitCode).toBe(0);
+
+      const get = await runBurrow(["get", "MESSAGE"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).toBe(0);
+      expect(get.stdout).toBe("hello world");
+    });
+
+    test("set KEY VALUE format with equals in value", async () => {
+      const set = await runBurrow(["set", "EQUATION", "a=b=c"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(set.exitCode).toBe(0);
+
+      const get = await runBurrow(["get", "EQUATION"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).toBe(0);
+      expect(get.stdout).toBe("a=b=c");
+    });
+
+    test("set KEY VALUE format with --path option", async () => {
+      const set = await runBurrow(["set", "PATH_KEY", "pathvalue", "--path", ctx.sub], {
+        cwd: ctx.root,
+        configDir: ctx.configDir,
+      });
+      expect(set.exitCode).toBe(0);
+
+      const get = await runBurrow(["get", "PATH_KEY", "--format", "json"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).toBe(0);
+      const parsed = JSON.parse(get.stdout);
+      expect(parsed.value).toBe("pathvalue");
+      expect(parsed.sourcePath).toBe(ctx.sub);
+    });
+
+    test("set KEY prompts for value via stdin", async () => {
+      const set = await runBurrow(["set", "STDIN_KEY"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+        stdin: "stdinvalue\n",
+      });
+      expect(set.exitCode).toBe(0);
+
+      const get = await runBurrow(["get", "STDIN_KEY"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).toBe(0);
+      expect(get.stdout).toBe("stdinvalue");
+    });
+
+    test("set KEY with empty stdin value", async () => {
+      const set = await runBurrow(["set", "EMPTY_STDIN"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+        stdin: "\n",
+      });
+      expect(set.exitCode).toBe(0);
+
+      const get = await runBurrow(["get", "EMPTY_STDIN"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).toBe(0);
+      expect(get.stdout).toBe("");
+    });
+
+    test("set KEY=VALUE takes precedence over second argument", async () => {
+      // When KEY=VALUE format is used, any additional argument should be ignored
+      // (or this could be considered an error, but the = format takes precedence)
+      const set = await runBurrow(["set", "PRECEDENCE=first", "second"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(set.exitCode).toBe(0);
+
+      const get = await runBurrow(["get", "PRECEDENCE"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).toBe(0);
+      expect(get.stdout).toBe("first");
+    });
+
+    test("set KEY VALUE format with empty value", async () => {
+      const set = await runBurrow(["set", "EMPTY_ARG", ""], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(set.exitCode).toBe(0);
+
+      const get = await runBurrow(["get", "EMPTY_ARG"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+      expect(get.exitCode).toBe(0);
+      expect(get.stdout).toBe("");
     });
   });
 
@@ -737,16 +888,6 @@ describe("Integration Tests", () => {
       });
       expect(getResult.exitCode).toBe(0);
       expect(getResult.stdout.trim()).toBe("value");
-    });
-
-    test("25. Invalid KEY=VALUE syntax - no equals", async () => {
-      const result = await runBurrow(["set", "JUSTKEY"], {
-        cwd: ctx.repo,
-        configDir: ctx.configDir,
-      });
-
-      expect(result.exitCode).not.toBe(0);
-      expect(result.stderr).toContain("KEY=VALUE");
     });
 
     test("25. Invalid KEY=VALUE syntax - empty key", async () => {
