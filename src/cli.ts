@@ -7,7 +7,7 @@ import { ReleaseNotifier } from "gh-release-update-notifier";
 import { spawn } from "child_process";
 import { platform } from "os";
 import { join } from "path";
-import * as readline from "readline";
+import password from "@inquirer/password";
 import { getConfigDir } from "./platform/index.ts";
 
 // Read version from package.json at build time
@@ -31,17 +31,7 @@ function validatePath(value: string): string {
 }
 
 function promptForValue(key: string): Promise<string> {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stderr,
-    });
-
-    rl.question(`Enter value for ${key}: `, (answer) => {
-      rl.close();
-      resolve(answer);
-    });
-  });
+  return password({ message: `Enter value for ${key}:`, mask: true });
 }
 
 const program = new Command();
