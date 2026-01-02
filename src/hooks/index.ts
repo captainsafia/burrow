@@ -1,11 +1,14 @@
 /**
  * Generates the bash shell hook code for Burrow auto-loading.
+ * 
+ * The hook tracks loaded keys in _BURROW_LOADED_KEYS environment variable
+ * to enable proper unloading when leaving directories.
  */
 export function generateBashHook(): string {
   return `# Burrow auto-load hook for bash
 _burrow_hook() {
   local prev_exit_status=$?
-  eval "$(burrow _hook-exec bash "$PWD")"
+  eval "$(burrow _hook-exec bash "$PWD" "$_BURROW_LOADED_KEYS")"
   return $prev_exit_status
 }
 
@@ -33,12 +36,15 @@ _burrow_hook
 
 /**
  * Generates the zsh shell hook code for Burrow auto-loading.
+ * 
+ * The hook tracks loaded keys in _BURROW_LOADED_KEYS environment variable
+ * to enable proper unloading when leaving directories.
  */
 export function generateZshHook(): string {
   return `# Burrow auto-load hook for zsh
 _burrow_hook() {
   local prev_exit_status=$?
-  eval "$(burrow _hook-exec zsh "$PWD")"
+  eval "$(burrow _hook-exec zsh "$PWD" "$_BURROW_LOADED_KEYS")"
   return $prev_exit_status
 }
 
@@ -53,11 +59,14 @@ _burrow_hook
 
 /**
  * Generates the fish shell hook code for Burrow auto-loading.
+ * 
+ * The hook tracks loaded keys in _BURROW_LOADED_KEYS environment variable
+ * to enable proper unloading when leaving directories.
  */
 export function generateFishHook(): string {
   return `# Burrow auto-load hook for fish
 function _burrow_hook --on-variable PWD
-  burrow _hook-exec fish "$PWD" | source
+  burrow _hook-exec fish "$PWD" "$_BURROW_LOADED_KEYS" | source
 end
 
 # Run hook on shell initialization

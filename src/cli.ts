@@ -130,9 +130,8 @@ program
   .description("List all resolved secrets for cwd")
   .addOption(new Option("-f, --format <format>", "Output format").choices(["plain", "json"]).default("plain"))
   .option("--redact", "Redact the secret values in output")
-  .option("--loaded", "Show currently loaded secrets from auto-load hook")
   .option("--trusted", "List all trusted directories (alias for 'burrow trust --list')")
-  .action(async (options: { format: string; redact?: boolean; loaded?: boolean; trusted?: boolean }) => {
+  .action(async (options: { format: string; redact?: boolean; trusted?: boolean }) => {
     using client = new BurrowClient();
 
     try {
@@ -145,34 +144,6 @@ program
         }
         for (const entry of trusted) {
           console.log(`${entry.path} (trusted at ${entry.trustedAt})`);
-        }
-        return;
-      }
-
-      // Handle --loaded flag
-      if (options.loaded) {
-        const state = await client.getHookState();
-        if (!state || state.secrets.length === 0) {
-          if (options.format === "plain") {
-            console.log("No secrets currently loaded by auto-load hook");
-          } else {
-            console.log("[]");
-          }
-          return;
-        }
-
-        if (options.format === "json") {
-          const output = state.secrets.map((s) => ({
-            key: s.key,
-            value: options.redact ? "[REDACTED]" : s.value,
-            sourcePath: s.sourcePath,
-          }));
-          console.log(JSON.stringify(output, null, 2));
-        } else {
-          for (const secret of state.secrets) {
-            const displayValue = options.redact ? "[REDACTED]" : secret.value;
-            console.log(`${secret.key}=${displayValue} (from ${secret.sourcePath})`);
-          }
         }
         return;
       }
@@ -509,22 +480,35 @@ program
   .description("Internal command executed by shell hooks")
   .argument("<shell>", "Shell type")
   .argument("<cwd>", "Current working directory")
-  .action(async (shell: string, cwd: string) => {
+  .argument("[previousKeys]", "Colon-separated list of previously loaded keys")
+  .action(async (shell: string, cwd: string, previousKeysArg?: string) => {
     const validShells = ["bash", "zsh", "fish"];
     if (!validShells.includes(shell)) {
       process.exit(1);
     }
 
+    // Parse previous keys from colon-separated string
+    const previousKeys = previousKeysArg ? previousKeysArg.split(":").filter(k => k.length > 0) : [];
+
     using client = new BurrowClient();
 
     try {
       const result = await client.hook(cwd, { 
-        shell: shell as "bash" | "zsh" | "fish" 
+        shell: shell as "bash" | "zsh" | "fish",
+        previousKeys,
       });
 
       // Output commands for shell to eval
       for (const cmd of result.commands) {
         console.log(cmd);
+      }
+
+      // Update the _BURROW_LOADED_KEYS tracking variable
+      const newKeys = result.secrets.map(s => s.key).join(":");
+      if (shell === "fish") {
+        console.log(`set -gx _BURROW_LOADED_KEYS '${newKeys}'`);
+      } else {
+        console.log(`export _BURROW_LOADED_KEYS='${newKeys}'`);
       }
 
       // Output message to stderr if present

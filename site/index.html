@@ -468,16 +468,12 @@ burrow init
 # Trust a project directory
 cd ~/projects/myapp
 burrow trust .</code></pre>
-                <p>Once set up, secrets are automatically loaded into your shell when you <code>cd</code> into a trusted directory, and unloaded when you leave.</p>
-                <pre><code># Navigating automatically loads/unloads secrets
+                <p>Once set up, secrets are automatically loaded into your shell when you <code>cd</code> into a trusted directory.</p>
+                <pre><code># Navigating automatically loads secrets
 $ cd ~/projects/myapp
 burrow: loaded 2 secrets
 $ echo $API_KEY
-sk-live-abc123
-$ cd /tmp
-burrow: unloaded 2 secrets</code></pre>
-                <p>See what secrets are currently loaded by the auto-load hook:</p>
-                <pre><code>burrow list --loaded</code></pre>
+sk-live-abc123</code></pre>
                 <p>List all trusted directories:</p>
                 <pre><code>burrow trust --list</code></pre>
                 <p>Remove trust from a directory:</p>

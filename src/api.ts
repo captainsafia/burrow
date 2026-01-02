@@ -9,19 +9,19 @@ import {
   type PathOptions,
   TrustManager,
   type TrustCheckResult,
-  HookStateManager,
-  type HookState,
-  type HookDiff,
   type LoadedSecret,
+  type HookDiff,
   formatHookMessage,
   generateShellCommands,
+  resolveToLoadedSecrets,
+  computeHookDiff,
 } from "./core/index.ts";
 import { type TrustedPath } from "./storage/index.ts";
 
 export type { ResolvedSecret };
 export type { ExportFormat };
 export type { TrustCheckResult };
-export type { HookState, HookDiff, LoadedSecret };
+export type { LoadedSecret, HookDiff };
 export type { TrustedPath };
 
 /**
@@ -168,6 +168,11 @@ export interface HookOptions {
    * Defaults to respecting NO_COLOR environment variable.
    */
   useColor?: boolean;
+  /**
+   * Keys that were previously loaded by the hook.
+   * Used to compute which keys need to be unset.
+   */
+  previousKeys?: string[];
 }
 
 /**
@@ -183,9 +188,13 @@ export interface HookResult {
    */
   message?: string;
   /**
-   * The diff that was computed.
+   * The secrets that were loaded.
    */
-  diff: HookDiff;
+  secrets: LoadedSecret[];
+  /**
+   * The keys that were unloaded.
+   */
+  unloadedKeys: string[];
   /**
    * Whether the directory is trusted.
    */
@@ -253,7 +262,6 @@ export class BurrowClient {
   private readonly resolver: Resolver;
   private readonly pathOptions: PathOptions;
   private readonly trustManager: TrustManager;
-  private readonly hookStateManager: HookStateManager;
 
   /**
    * Creates a new BurrowClient instance.
@@ -275,9 +283,6 @@ export class BurrowClient {
     this.trustManager = new TrustManager({
       storage: this.storage,
       followSymlinks: options.followSymlinks,
-    });
-    this.hookStateManager = new HookStateManager({
-      configDir: options.configDir,
     });
   }
 
@@ -576,46 +581,22 @@ export class BurrowClient {
   }
 
   /**
-   * Gets the current hook state (loaded secrets).
-   *
-   * @returns The current hook state or undefined if no secrets are loaded
-   *
-   * @example
-   * ```typescript
-   * const state = await client.getHookState();
-   * if (state) {
-   *   console.log(`${state.secrets.length} secrets loaded from ${state.lastDir}`);
-   * }
-   * ```
-   */
-  async getHookState(): Promise<HookState | undefined> {
-    return this.hookStateManager.load();
-  }
-
-  /**
-   * Clears the hook state (unloads all secrets tracking).
-   *
-   * Note: This only clears the state file. The actual environment variables
-   * remain set until the shell exits or they are explicitly unset.
-   */
-  async clearHookState(): Promise<void> {
-    return this.hookStateManager.clear();
-  }
-
-  /**
    * Processes a directory change for the shell hook.
    *
    * This is the main method called by shell hooks on directory change.
-   * It checks trust, resolves secrets, computes the diff, and returns
-   * the commands needed to update the environment.
+   * It checks trust, resolves secrets, computes the diff from previous
+   * state, and returns the commands needed to update the environment.
    *
    * @param cwd - The new working directory
-   * @param options - Hook options including shell type
+   * @param options - Hook options including shell type and previous keys
    * @returns Hook result with commands to execute and optional message
    *
    * @example
    * ```typescript
-   * const result = await client.hook('/projects/myapp', { shell: 'bash' });
+   * const result = await client.hook('/projects/myapp', { 
+   *   shell: 'bash',
+   *   previousKeys: ['OLD_KEY'] // Keys from last hook call
+   * });
    * if (result.trusted) {
    *   for (const cmd of result.commands) {
    *     console.log(cmd); // Execute in shell
@@ -627,12 +608,21 @@ export class BurrowClient {
    * ```
    */
   async hook(cwd: string, options: HookOptions): Promise<HookResult> {
+    const previousKeys = new Set(options.previousKeys ?? []);
+
     // Check if autoload is disabled
     if (process.env["BURROW_AUTOLOAD"] === "0") {
-      const emptyDiff: HookDiff = { unset: [], set: [], skipped: [], unchanged: [] };
+      // Still need to unset any previously loaded keys
+      const diff = computeHookDiff(previousKeys, []);
+      const commands = generateShellCommands(diff, options.shell);
+      const useColor = options.useColor ?? !process.env["NO_COLOR"];
+      const message = diff.toUnset.length > 0 ? formatHookMessage(diff, useColor) : undefined;
+      
       return {
-        commands: [],
-        diff: emptyDiff,
+        commands,
+        message,
+        secrets: [],
+        unloadedKeys: diff.toUnset,
         trusted: false,
         notTrustedReason: "autoload-disabled",
       };
@@ -641,29 +631,33 @@ export class BurrowClient {
     // Check if directory is trusted
     const trustResult = await this.isTrusted({ path: cwd });
     if (!trustResult.trusted) {
-      const emptyDiff: HookDiff = { unset: [], set: [], skipped: [], unchanged: [] };
+      // Unset any previously loaded keys when leaving trusted area
+      const diff = computeHookDiff(previousKeys, []);
+      const commands = generateShellCommands(diff, options.shell);
+      const useColor = options.useColor ?? !process.env["NO_COLOR"];
+      const message = diff.toUnset.length > 0 ? formatHookMessage(diff, useColor) : undefined;
+      
       return {
-        commands: [],
-        diff: emptyDiff,
+        commands,
+        message,
+        secrets: [],
+        unloadedKeys: diff.toUnset,
         trusted: false,
         notTrustedReason: trustResult.reason,
       };
     }
 
-    // Resolve secrets for the new directory
-    const newSecrets = await this.resolve(cwd);
+    // Resolve secrets for the directory
+    const resolvedSecrets = await this.resolve(cwd);
 
-    // Get current state
-    const currentState = await this.hookStateManager.load();
+    // Convert to loaded secrets format
+    const secrets = resolveToLoadedSecrets(resolvedSecrets);
 
-    // Compute diff
-    const diff = this.hookStateManager.computeDiff(currentState, newSecrets);
+    // Compute diff from previous state
+    const diff = computeHookDiff(previousKeys, secrets);
 
     // Generate shell commands
     const commands = generateShellCommands(diff, options.shell);
-
-    // Apply diff and update state
-    await this.hookStateManager.applyDiff(currentState, diff, cwd);
 
     // Generate message
     const useColor = options.useColor ?? !process.env["NO_COLOR"];
@@ -672,7 +666,8 @@ export class BurrowClient {
     return {
       commands,
       message,
-      diff,
+      secrets,
+      unloadedKeys: diff.toUnset,
       trusted: true,
     };
   }

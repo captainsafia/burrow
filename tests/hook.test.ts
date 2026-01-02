@@ -24,21 +24,6 @@ describe("Hook functionality", () => {
     await rm(testDir, { recursive: true, force: true });
   });
 
-  describe("getHookState", () => {
-    test("returns undefined when no state exists", async () => {
-      const state = await client.getHookState();
-      expect(state).toBeUndefined();
-    });
-  });
-
-  describe("clearHookState", () => {
-    test("clears hook state without error", async () => {
-      await client.clearHookState();
-      const state = await client.getHookState();
-      expect(state).toBeUndefined();
-    });
-  });
-
   describe("hook", () => {
     test("returns not trusted for untrusted directory", async () => {
       const result = await client.hook(testDir, { shell: "bash" });
@@ -74,9 +59,9 @@ describe("Hook functionality", () => {
       const result = await client.hook(testDir, { shell: "bash" });
       
       expect(result.trusted).toBe(true);
-      expect(result.diff.set.length).toBe(1);
-      expect(result.diff.set[0]!.key).toBe("API_KEY");
-      expect(result.diff.set[0]!.value).toBe("secret123");
+      expect(result.secrets.length).toBe(1);
+      expect(result.secrets[0]!.key).toBe("API_KEY");
+      expect(result.secrets[0]!.value).toBe("secret123");
     });
 
     test("generates bash export commands", async () => {
@@ -99,77 +84,31 @@ describe("Hook functionality", () => {
       expect(result.commands[0]).toMatch(/^set -gx API_KEY/);
     });
 
-    test("computes diff correctly for directory change", async () => {
+    test("loads inherited secrets in subdirectory", async () => {
       const projectPath = join(testDir, "projects");
       
       await client.trust({ path: testDir });
       await client.set("GLOBAL_KEY", "global", { path: testDir });
       await client.set("PROJECT_KEY", "project", { path: projectPath });
       
-      // First hook - load global secrets
-      const result1 = await client.hook(testDir, { shell: "bash" });
-      expect(result1.diff.set.length).toBe(1);
-      expect(result1.diff.set[0]!.key).toBe("GLOBAL_KEY");
+      // Hook in subdirectory should get both secrets
+      const result = await client.hook(projectPath, { shell: "bash" });
       
-      // Second hook - move to projects, should add PROJECT_KEY
-      const result2 = await client.hook(projectPath, { shell: "bash" });
-      expect(result2.diff.set.length).toBe(1);
-      expect(result2.diff.set[0]!.key).toBe("PROJECT_KEY");
-      expect(result2.diff.unchanged).toContain("GLOBAL_KEY");
+      expect(result.trusted).toBe(true);
+      expect(result.secrets.length).toBe(2);
+      
+      const keys = result.secrets.map(s => s.key).sort();
+      expect(keys).toEqual(["GLOBAL_KEY", "PROJECT_KEY"]);
     });
 
-    test("unsets secrets when leaving scope", async () => {
-      const projectPath = join(testDir, "projects");
-      const otherPath = join(testDir, "other");
-      
+    test("returns empty secrets for trusted directory with no secrets", async () => {
       await client.trust({ path: testDir });
-      await client.set("PROJECT_KEY", "project", { path: projectPath });
       
-      // Enter projects
-      await client.hook(projectPath, { shell: "bash" });
+      const result = await client.hook(testDir, { shell: "bash" });
       
-      // Leave to other directory - should unset PROJECT_KEY
-      const result = await client.hook(otherPath, { shell: "bash" });
-      expect(result.diff.unset).toContain("PROJECT_KEY");
-    });
-
-    test("generates bash unset commands", async () => {
-      const projectPath = join(testDir, "projects");
-      const otherPath = join(testDir, "other");
-      
-      await client.trust({ path: testDir });
-      await client.set("PROJECT_KEY", "project", { path: projectPath });
-      
-      await client.hook(projectPath, { shell: "bash" });
-      const result = await client.hook(otherPath, { shell: "bash" });
-      
-      expect(result.commands).toContain("unset PROJECT_KEY");
-    });
-
-    test("generates fish unset commands", async () => {
-      const projectPath = join(testDir, "projects");
-      const otherPath = join(testDir, "other");
-      
-      await client.trust({ path: testDir });
-      await client.set("PROJECT_KEY", "project", { path: projectPath });
-      
-      await client.hook(projectPath, { shell: "fish" });
-      const result = await client.hook(otherPath, { shell: "fish" });
-      
-      expect(result.commands).toContain("set -e PROJECT_KEY");
-    });
-
-    test("updates hook state after hook call", async () => {
-      await client.trust({ path: testDir });
-      await client.set("API_KEY", "secret123", { path: testDir });
-      
-      await client.hook(testDir, { shell: "bash" });
-      
-      const state = await client.getHookState();
-      expect(state).toBeDefined();
-      expect(state!.secrets.length).toBe(1);
-      expect(state!.secrets[0]!.key).toBe("API_KEY");
-      expect(state!.lastDir).toBe(testDir);
+      expect(result.trusted).toBe(true);
+      expect(result.secrets).toEqual([]);
+      expect(result.commands).toEqual([]);
     });
 
     test("returns message with loaded count", async () => {
@@ -183,12 +122,100 @@ describe("Hook functionality", () => {
       expect(result.message).toContain("loaded 2 secrets");
     });
 
-    test("returns no message when nothing changes", async () => {
+    test("returns no message when no secrets", async () => {
       await client.trust({ path: testDir });
       
       const result = await client.hook(testDir, { shell: "bash" });
       
       expect(result.message).toBeUndefined();
+    });
+
+    test("escapes special characters in bash", async () => {
+      await client.trust({ path: testDir });
+      await client.set("SPECIAL", "hello 'world' $var", { path: testDir });
+      
+      const result = await client.hook(testDir, { shell: "bash" });
+      
+      expect(result.commands[0]).toContain("$'");
+      expect(result.commands[0]).toContain("\\'");
+    });
+
+    test("escapes special characters in fish", async () => {
+      await client.trust({ path: testDir });
+      await client.set("SPECIAL", "hello 'world'", { path: testDir });
+      
+      const result = await client.hook(testDir, { shell: "fish" });
+      
+      // Fish escapes single quotes differently
+      expect(result.commands[0]).toMatch(/set -gx SPECIAL/);
+    });
+
+    test("unloads secrets when leaving trusted directory", async () => {
+      await client.trust({ path: testDir });
+      await client.set("API_KEY", "secret123", { path: testDir });
+      
+      // First hook loads the secret
+      const result1 = await client.hook(testDir, { shell: "bash" });
+      expect(result1.secrets.length).toBe(1);
+      
+      // Simulate leaving to untrusted directory with previous keys
+      const result2 = await client.hook("/tmp", { 
+        shell: "bash",
+        previousKeys: ["API_KEY"]
+      });
+      
+      expect(result2.trusted).toBe(false);
+      expect(result2.unloadedKeys).toContain("API_KEY");
+      expect(result2.commands).toContain("unset API_KEY");
+    });
+
+    test("unloads secrets when navigating to directory with different secrets", async () => {
+      const projectPath = join(testDir, "projects");
+      const otherPath = join(testDir, "other");
+      
+      await client.trust({ path: testDir });
+      await client.set("PROJECT_KEY", "project", { path: projectPath });
+      await client.set("OTHER_KEY", "other", { path: otherPath });
+      
+      // First hook in projects
+      const result1 = await client.hook(projectPath, { shell: "bash" });
+      expect(result1.secrets.map(s => s.key)).toContain("PROJECT_KEY");
+      
+      // Move to other directory with previous keys
+      const result2 = await client.hook(otherPath, { 
+        shell: "bash",
+        previousKeys: ["PROJECT_KEY"]
+      });
+      
+      expect(result2.unloadedKeys).toContain("PROJECT_KEY");
+      expect(result2.secrets.map(s => s.key)).toContain("OTHER_KEY");
+      expect(result2.commands).toContain("unset PROJECT_KEY");
+    });
+
+    test("generates fish unset commands", async () => {
+      await client.trust({ path: testDir });
+      await client.set("API_KEY", "secret", { path: testDir });
+      
+      // Simulate leaving trusted area
+      const result = await client.hook("/tmp", { 
+        shell: "fish",
+        previousKeys: ["API_KEY"]
+      });
+      
+      expect(result.commands).toContain("set -e API_KEY");
+    });
+
+    test("returns unloaded message when leaving", async () => {
+      await client.trust({ path: testDir });
+      
+      const result = await client.hook("/tmp", { 
+        shell: "bash",
+        previousKeys: ["KEY1", "KEY2"],
+        useColor: false
+      });
+      
+      expect(result.message).toBeDefined();
+      expect(result.message).toContain("unloaded 2");
     });
   });
 });
