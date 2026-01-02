@@ -5,10 +5,12 @@ import { BurrowClient, type ExportFormat } from "./api.ts";
 import clipboardy from "clipboardy";
 import { ReleaseNotifier } from "gh-release-update-notifier";
 import { spawn } from "child_process";
-import { platform } from "os";
+import { platform, homedir } from "os";
 import { join } from "path";
+import { readFile, writeFile, appendFile, access } from "node:fs/promises";
 import password from "@inquirer/password";
 import { getConfigDir } from "./platform/index.ts";
+import { generateBashHook, generateZshHook, generateFishHook } from "./hooks/index.ts";
 
 // Read version from package.json at build time
 const packageJson = await import("../package.json");
@@ -128,10 +130,53 @@ program
   .description("List all resolved secrets for cwd")
   .addOption(new Option("-f, --format <format>", "Output format").choices(["plain", "json"]).default("plain"))
   .option("--redact", "Redact the secret values in output")
-  .action(async (options: { format: string; redact?: boolean }) => {
+  .option("--loaded", "Show currently loaded secrets from auto-load hook")
+  .option("--trusted", "List all trusted directories (alias for 'burrow trust --list')")
+  .action(async (options: { format: string; redact?: boolean; loaded?: boolean; trusted?: boolean }) => {
     using client = new BurrowClient();
 
     try {
+      // Handle --trusted flag (alias for 'burrow trust --list')
+      if (options.trusted) {
+        const trusted = await client.listTrusted();
+        if (trusted.length === 0) {
+          console.log("No directories are currently trusted");
+          return;
+        }
+        for (const entry of trusted) {
+          console.log(`${entry.path} (trusted at ${entry.trustedAt})`);
+        }
+        return;
+      }
+
+      // Handle --loaded flag
+      if (options.loaded) {
+        const state = await client.getHookState();
+        if (!state || state.secrets.length === 0) {
+          if (options.format === "plain") {
+            console.log("No secrets currently loaded by auto-load hook");
+          } else {
+            console.log("[]");
+          }
+          return;
+        }
+
+        if (options.format === "json") {
+          const output = state.secrets.map((s) => ({
+            key: s.key,
+            value: options.redact ? "[REDACTED]" : s.value,
+            sourcePath: s.sourcePath,
+          }));
+          console.log(JSON.stringify(output, null, 2));
+        } else {
+          for (const secret of state.secrets) {
+            const displayValue = options.redact ? "[REDACTED]" : secret.value;
+            console.log(`${secret.key}=${displayValue} (from ${secret.sourcePath})`);
+          }
+        }
+        return;
+      }
+
       const secrets = await client.list();
 
       if (secrets.length === 0) {
@@ -276,6 +321,219 @@ program
     } catch (error) {
       console.error(`Error: ${(error as Error).message}`);
       process.exit(1);
+    }
+  });
+
+program
+  .command("trust")
+  .description("Trust a directory for auto-loading secrets")
+  .argument("[path]", "Directory to trust (default: cwd)")
+  .option("--list", "List all trusted directories")
+  .action(async (pathArg: string | undefined, options: { list?: boolean }) => {
+    using client = new BurrowClient();
+
+    try {
+      if (options.list) {
+        const trusted = await client.listTrusted();
+        if (trusted.length === 0) {
+          console.log("No directories are currently trusted");
+          return;
+        }
+        for (const entry of trusted) {
+          console.log(`${entry.path} (trusted at ${entry.trustedAt})`);
+        }
+        return;
+      }
+
+      const targetPath = pathArg ?? process.cwd();
+      const result = await client.trust({ path: targetPath });
+      console.log(`Trusted: ${result.path}`);
+    } catch (error) {
+      console.error(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("untrust")
+  .description("Remove trust from a directory")
+  .argument("[path]", "Directory to untrust (default: cwd)")
+  .action(async (pathArg: string | undefined) => {
+    using client = new BurrowClient();
+
+    try {
+      const targetPath = pathArg ?? process.cwd();
+      const removed = await client.untrust({ path: targetPath });
+      if (removed) {
+        console.log(`Untrusted: ${targetPath}`);
+      } else {
+        console.log(`Directory was not trusted: ${targetPath}`);
+      }
+    } catch (error) {
+      console.error(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("hook")
+  .description("Output shell hook code for auto-loading")
+  .argument("<shell>", "Shell type (bash, zsh, or fish)")
+  .action(async (shell: string) => {
+    const validShells = ["bash", "zsh", "fish"];
+    if (!validShells.includes(shell)) {
+      console.error(`Error: Invalid shell "${shell}". Valid options: ${validShells.join(", ")}`);
+      process.exit(1);
+    }
+
+    let hookCode: string;
+    switch (shell) {
+      case "bash":
+        hookCode = generateBashHook();
+        break;
+      case "zsh":
+        hookCode = generateZshHook();
+        break;
+      case "fish":
+        hookCode = generateFishHook();
+        break;
+      default:
+        hookCode = "";
+    }
+
+    console.log(hookCode);
+  });
+
+function detectShellFromEnv(): "bash" | "zsh" | "fish" | undefined {
+  const shell = process.env["SHELL"] ?? "";
+  const shellBase = shell.split("/").pop() ?? "";
+  
+  switch (shellBase) {
+    case "bash":
+      return "bash";
+    case "zsh":
+      return "zsh";
+    case "fish":
+      return "fish";
+    default:
+      return undefined;
+  }
+}
+
+function getShellRcPath(shell: "bash" | "zsh" | "fish"): string {
+  const home = homedir();
+  switch (shell) {
+    case "bash":
+      return join(home, ".bashrc");
+    case "zsh":
+      return join(home, ".zshrc");
+    case "fish":
+      return join(home, ".config", "fish", "config.fish");
+  }
+}
+
+const HOOK_MARKER = "# Burrow auto-load hook";
+
+async function isHookInstalled(rcPath: string): Promise<boolean> {
+  try {
+    const content = await readFile(rcPath, "utf-8");
+    return content.includes(HOOK_MARKER);
+  } catch {
+    return false;
+  }
+}
+
+program
+  .command("init")
+  .description("Install the shell hook for auto-loading")
+  .argument("[shell]", "Shell type (bash, zsh, or fish). Auto-detects if not specified.")
+  .action(async (shellArg: string | undefined) => {
+    let shell: "bash" | "zsh" | "fish";
+    
+    if (shellArg) {
+      const validShells = ["bash", "zsh", "fish"];
+      if (!validShells.includes(shellArg)) {
+        console.error(`Error: Invalid shell "${shellArg}". Valid options: ${validShells.join(", ")}`);
+        process.exit(1);
+      }
+      shell = shellArg as "bash" | "zsh" | "fish";
+    } else {
+      const detected = detectShellFromEnv();
+      if (!detected) {
+        console.error("Error: Could not auto-detect shell. Please specify: burrow init bash|zsh|fish");
+        process.exit(1);
+      }
+      shell = detected;
+      console.log(`Detected shell: ${shell}`);
+    }
+
+    const rcPath = getShellRcPath(shell);
+    
+    // Check if hook is already installed
+    if (await isHookInstalled(rcPath)) {
+      console.log(`Burrow hook is already installed in ${rcPath}`);
+      return;
+    }
+
+    // Generate hook snippet
+    const hookSnippet = `
+${HOOK_MARKER}
+eval "$(burrow hook ${shell})"
+`;
+
+    try {
+      // Check if rc file exists
+      try {
+        await access(rcPath);
+      } catch {
+        // File doesn't exist, create it
+        await writeFile(rcPath, hookSnippet);
+        console.log(`Created ${rcPath} with Burrow hook`);
+        console.log(`Restart your shell or run: source ${rcPath}`);
+        return;
+      }
+
+      // Append to existing file
+      await appendFile(rcPath, hookSnippet);
+      console.log(`Added Burrow hook to ${rcPath}`);
+      console.log(`Restart your shell or run: source ${rcPath}`);
+    } catch (error) {
+      console.error(`Error: Failed to modify ${rcPath}: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+// Internal command for hook execution
+program
+  .command("_hook-exec", { hidden: true })
+  .description("Internal command executed by shell hooks")
+  .argument("<shell>", "Shell type")
+  .argument("<cwd>", "Current working directory")
+  .action(async (shell: string, cwd: string) => {
+    const validShells = ["bash", "zsh", "fish"];
+    if (!validShells.includes(shell)) {
+      process.exit(1);
+    }
+
+    using client = new BurrowClient();
+
+    try {
+      const result = await client.hook(cwd, { 
+        shell: shell as "bash" | "zsh" | "fish" 
+      });
+
+      // Output commands for shell to eval
+      for (const cmd of result.commands) {
+        console.log(cmd);
+      }
+
+      // Output message to stderr if present
+      if (result.message) {
+        console.error(result.message);
+      }
+    } catch (error) {
+      // On error, output warning to stderr but don't block shell
+      console.error(`burrow: warning: failed to resolve secrets: ${(error as Error).message}`);
     }
   });
 

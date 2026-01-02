@@ -15,6 +15,12 @@ export interface PathSecrets {
   [key: string]: SecretEntry;
 }
 
+export interface TrustedPath {
+  path: string;
+  inode: string;
+  trustedAt: string;
+}
+
 export interface StorageOptions {
   configDir?: string;
   storeFileName?: string;
@@ -65,6 +71,17 @@ export class Storage {
     `);
 
     this.db.run("CREATE INDEX IF NOT EXISTS idx_secrets_path ON secrets (path)");
+
+    // Create trusted_paths table for direnv-style auto-loading
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS trusted_paths (
+        path TEXT PRIMARY KEY,
+        inode TEXT NOT NULL,
+        trusted_at TEXT NOT NULL
+      )
+    `);
+
+    this.db.run("CREATE INDEX IF NOT EXISTS idx_trusted_paths_inode ON trusted_paths (inode)");
 
     const versionResult = this.db
       .query<{ user_version: number }, []>("PRAGMA user_version")
@@ -198,6 +215,128 @@ export class Storage {
     );
 
     return true;
+  }
+
+  /**
+   * Adds a trusted path entry.
+   * 
+   * @param canonicalPath - The canonical path to trust
+   * @param inode - The filesystem inode/file ID for the path
+   */
+  async addTrustedPath(canonicalPath: string, inode: string): Promise<void> {
+    const db = await this.ensureDb();
+    const trustedAt = new Date().toISOString();
+
+    db.query(`
+      INSERT INTO trusted_paths (path, inode, trusted_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(path) DO UPDATE SET
+        inode = excluded.inode,
+        trusted_at = excluded.trusted_at
+    `).run(canonicalPath, inode, trustedAt);
+  }
+
+  /**
+   * Removes a trusted path entry.
+   * 
+   * @param canonicalPath - The canonical path to untrust
+   * @returns true if the path was found and removed, false otherwise
+   */
+  async removeTrustedPath(canonicalPath: string): Promise<boolean> {
+    const db = await this.ensureDb();
+
+    const existing = db
+      .query<{ path: string }, [string]>(
+        "SELECT path FROM trusted_paths WHERE path = ?"
+      )
+      .get(canonicalPath);
+
+    if (!existing) {
+      return false;
+    }
+
+    db.query("DELETE FROM trusted_paths WHERE path = ?").run(canonicalPath);
+    return true;
+  }
+
+  /**
+   * Gets a trusted path entry by its canonical path.
+   * 
+   * @param canonicalPath - The canonical path to look up
+   * @returns The trusted path entry or undefined if not found
+   */
+  async getTrustedPath(canonicalPath: string): Promise<TrustedPath | undefined> {
+    const db = await this.ensureDb();
+
+    const row = db
+      .query<{ path: string; inode: string; trusted_at: string }, [string]>(
+        "SELECT path, inode, trusted_at FROM trusted_paths WHERE path = ?"
+      )
+      .get(canonicalPath);
+
+    if (!row) {
+      return undefined;
+    }
+
+    return {
+      path: row.path,
+      inode: row.inode,
+      trustedAt: row.trusted_at,
+    };
+  }
+
+  /**
+   * Gets all trusted paths.
+   * 
+   * @returns Array of all trusted path entries
+   */
+  async getAllTrustedPaths(): Promise<TrustedPath[]> {
+    const db = await this.ensureDb();
+
+    const rows = db
+      .query<{ path: string; inode: string; trusted_at: string }, []>(
+        "SELECT path, inode, trusted_at FROM trusted_paths ORDER BY path"
+      )
+      .all();
+
+    return rows.map((row) => ({
+      path: row.path,
+      inode: row.inode,
+      trustedAt: row.trusted_at,
+    }));
+  }
+
+  /**
+   * Finds trusted ancestor paths for a given canonical path.
+   * Returns all trusted paths that are ancestors of (or equal to) the given path.
+   * 
+   * @param canonicalPath - The canonical path to check
+   * @returns Array of trusted ancestor paths
+   */
+  async getTrustedAncestorPaths(canonicalPath: string): Promise<TrustedPath[]> {
+    const db = await this.ensureDb();
+
+    let rows: { path: string; inode: string; trusted_at: string }[];
+
+    if (isWindows()) {
+      rows = db
+        .query<{ path: string; inode: string; trusted_at: string }, [string, string, string]>(
+          "SELECT path, inode, trusted_at FROM trusted_paths WHERE ? = path OR ? LIKE path || '\\' || '%' OR (length(path) = 3 AND path LIKE '_:\\' AND ? LIKE path || '%')"
+        )
+        .all(canonicalPath, canonicalPath, canonicalPath);
+    } else {
+      rows = db
+        .query<{ path: string; inode: string; trusted_at: string }, [string, string]>(
+          "SELECT path, inode, trusted_at FROM trusted_paths WHERE ? = path OR ? LIKE path || '/' || '%' OR path = '/'"
+        )
+        .all(canonicalPath, canonicalPath);
+    }
+
+    return rows.map((row) => ({
+      path: row.path,
+      inode: row.inode,
+      trustedAt: row.trusted_at,
+    }));
   }
 
   /**

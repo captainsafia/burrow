@@ -458,6 +458,33 @@
                 <p>Remove a secret entry entirely (restores inheritance):</p>
                 <pre><code>burrow remove API_KEY --path ~/projects/app</code></pre>
             </div>
+
+            <div class="command-group">
+                <h4>Auto-load secrets (direnv-style)</h4>
+                <p>Set up automatic loading of secrets when you enter a trusted directory:</p>
+                <pre><code># Install the shell hook (one-time setup)
+burrow init
+
+# Trust a project directory
+cd ~/projects/myapp
+burrow trust .</code></pre>
+                <p>Once set up, secrets are automatically loaded into your shell when you <code>cd</code> into a trusted directory, and unloaded when you leave.</p>
+                <pre><code># Navigating automatically loads/unloads secrets
+$ cd ~/projects/myapp
+burrow: loaded 2 secrets
+$ echo $API_KEY
+sk-live-abc123
+$ cd /tmp
+burrow: unloaded 2 secrets</code></pre>
+                <p>See what secrets are currently loaded by the auto-load hook:</p>
+                <pre><code>burrow list --loaded</code></pre>
+                <p>List all trusted directories:</p>
+                <pre><code>burrow trust --list</code></pre>
+                <p>Remove trust from a directory:</p>
+                <pre><code>burrow untrust ~/projects/myapp</code></pre>
+                <p>Disable auto-loading globally via environment variable:</p>
+                <pre><code>export BURROW_AUTOLOAD=0</code></pre>
+            </div>
         </section>
 
         <section>
@@ -493,6 +520,22 @@
                     <tr>
                         <td>burrow remove &lt;key&gt;</td>
                         <td>Remove a secret entry entirely from the given path</td>
+                    </tr>
+                    <tr>
+                        <td>burrow trust [path]</td>
+                        <td>Trust a directory for auto-loading secrets</td>
+                    </tr>
+                    <tr>
+                        <td>burrow untrust [path]</td>
+                        <td>Remove trust from a directory</td>
+                    </tr>
+                    <tr>
+                        <td>burrow init [shell]</td>
+                        <td>Install the shell hook for auto-loading (bash, zsh, fish)</td>
+                    </tr>
+                    <tr>
+                        <td>burrow hook &lt;shell&gt;</td>
+                        <td>Output shell hook code for manual installation</td>
                     </tr>
                     <tr>
                         <td>burrow version</td>

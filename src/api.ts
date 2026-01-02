@@ -7,10 +7,22 @@ import {
   assertValidEnvKey,
   type ExportFormat,
   type PathOptions,
+  TrustManager,
+  type TrustCheckResult,
+  HookStateManager,
+  type HookState,
+  type HookDiff,
+  type LoadedSecret,
+  formatHookMessage,
+  generateShellCommands,
 } from "./core/index.ts";
+import { type TrustedPath } from "./storage/index.ts";
 
 export type { ResolvedSecret };
 export type { ExportFormat };
+export type { TrustCheckResult };
+export type { HookState, HookDiff, LoadedSecret };
+export type { TrustedPath };
 
 /**
  * Configuration options for creating a BurrowClient instance.
@@ -97,6 +109,94 @@ export interface RemoveOptions {
 }
 
 /**
+ * Options for the `trust` method.
+ */
+export interface TrustOptions {
+  /**
+   * Directory path to trust.
+   * Defaults to the current working directory.
+   */
+  path?: string;
+}
+
+/**
+ * Options for the `untrust` method.
+ */
+export interface UntrustOptions {
+  /**
+   * Directory path to untrust.
+   * Defaults to the current working directory.
+   */
+  path?: string;
+}
+
+/**
+ * Options for the `isTrusted` method.
+ */
+export interface IsTrustedOptions {
+  /**
+   * Directory path to check for trust.
+   * Defaults to the current working directory.
+   */
+  path?: string;
+}
+
+/**
+ * Result of the `trust` method.
+ */
+export interface TrustResult {
+  /**
+   * The canonicalized path that was trusted.
+   */
+  path: string;
+  /**
+   * The filesystem inode/file ID for the trusted path.
+   */
+  inode: string;
+}
+
+/**
+ * Options for the `hook` method.
+ */
+export interface HookOptions {
+  /**
+   * The shell to generate hook commands for.
+   */
+  shell: "bash" | "zsh" | "fish";
+  /**
+   * Whether to use colored output.
+   * Defaults to respecting NO_COLOR environment variable.
+   */
+  useColor?: boolean;
+}
+
+/**
+ * Result of the `hook` method.
+ */
+export interface HookResult {
+  /**
+   * Shell commands to execute for environment updates.
+   */
+  commands: string[];
+  /**
+   * Optional message to display to the user.
+   */
+  message?: string;
+  /**
+   * The diff that was computed.
+   */
+  diff: HookDiff;
+  /**
+   * Whether the directory is trusted.
+   */
+  trusted: boolean;
+  /**
+   * Reason if directory is not trusted.
+   */
+  notTrustedReason?: "not-trusted" | "inode-mismatch" | "path-not-found" | "autoload-disabled";
+}
+
+/**
  * Options for the `export` method.
  */
 export interface ExportOptions {
@@ -152,6 +252,8 @@ export class BurrowClient {
   private readonly storage: Storage;
   private readonly resolver: Resolver;
   private readonly pathOptions: PathOptions;
+  private readonly trustManager: TrustManager;
+  private readonly hookStateManager: HookStateManager;
 
   /**
    * Creates a new BurrowClient instance.
@@ -170,6 +272,13 @@ export class BurrowClient {
     this.pathOptions = {
       followSymlinks: options.followSymlinks,
     };
+    this.trustManager = new TrustManager({
+      storage: this.storage,
+      followSymlinks: options.followSymlinks,
+    });
+    this.hookStateManager = new HookStateManager({
+      configDir: options.configDir,
+    });
   }
 
   /**
@@ -377,6 +486,195 @@ export class BurrowClient {
    */
   async resolve(cwd?: string): Promise<Map<string, ResolvedSecret>> {
     return this.resolver.resolve(cwd);
+  }
+
+  /**
+   * Trusts a directory for auto-loading secrets.
+   *
+   * When a directory is trusted, navigating into it (or its subdirectories)
+   * will automatically load secrets into the shell environment via the hook.
+   *
+   * @param options - Trust options including target path
+   * @returns The trusted path info with canonicalized path and inode
+   *
+   * @example
+   * ```typescript
+   * // Trust current directory
+   * await client.trust();
+   *
+   * // Trust specific path
+   * const result = await client.trust({ path: '/projects/myapp' });
+   * console.log(`Trusted: ${result.path}`);
+   * ```
+   */
+  async trust(options: TrustOptions = {}): Promise<TrustResult> {
+    const targetPath = options.path ?? process.cwd();
+    return this.trustManager.trust(targetPath);
+  }
+
+  /**
+   * Removes trust from a directory.
+   *
+   * After untrusting, the directory (and its subdirectories) will no longer
+   * auto-load secrets. Secrets currently loaded remain until the next directory change.
+   *
+   * @param options - Untrust options including target path
+   * @returns true if the path was trusted and is now untrusted, false if it wasn't trusted
+   *
+   * @example
+   * ```typescript
+   * const removed = await client.untrust({ path: '/projects/myapp' });
+   * if (removed) {
+   *   console.log('Directory is no longer trusted');
+   * }
+   * ```
+   */
+  async untrust(options: UntrustOptions = {}): Promise<boolean> {
+    const targetPath = options.path ?? process.cwd();
+    return this.trustManager.untrust(targetPath);
+  }
+
+  /**
+   * Checks if a directory is trusted for auto-loading.
+   *
+   * Trust can be inherited from ancestor directories. Also validates that
+   * the inode matches to detect directory replacements.
+   *
+   * @param options - Options including path to check
+   * @returns Trust check result with status and reason if not trusted
+   *
+   * @example
+   * ```typescript
+   * const result = await client.isTrusted({ path: '/projects/myapp/src' });
+   * if (result.trusted) {
+   *   console.log(`Trusted via: ${result.trustedPath}`);
+   * } else {
+   *   console.log(`Not trusted: ${result.reason}`);
+   * }
+   * ```
+   */
+  async isTrusted(options: IsTrustedOptions = {}): Promise<TrustCheckResult> {
+    const targetPath = options.path ?? process.cwd();
+    return this.trustManager.isTrusted(targetPath);
+  }
+
+  /**
+   * Lists all trusted directories.
+   *
+   * @returns Array of all trusted path entries
+   *
+   * @example
+   * ```typescript
+   * const trusted = await client.listTrusted();
+   * for (const entry of trusted) {
+   *   console.log(`${entry.path} (trusted at ${entry.trustedAt})`);
+   * }
+   * ```
+   */
+  async listTrusted(): Promise<TrustedPath[]> {
+    return this.trustManager.list();
+  }
+
+  /**
+   * Gets the current hook state (loaded secrets).
+   *
+   * @returns The current hook state or undefined if no secrets are loaded
+   *
+   * @example
+   * ```typescript
+   * const state = await client.getHookState();
+   * if (state) {
+   *   console.log(`${state.secrets.length} secrets loaded from ${state.lastDir}`);
+   * }
+   * ```
+   */
+  async getHookState(): Promise<HookState | undefined> {
+    return this.hookStateManager.load();
+  }
+
+  /**
+   * Clears the hook state (unloads all secrets tracking).
+   *
+   * Note: This only clears the state file. The actual environment variables
+   * remain set until the shell exits or they are explicitly unset.
+   */
+  async clearHookState(): Promise<void> {
+    return this.hookStateManager.clear();
+  }
+
+  /**
+   * Processes a directory change for the shell hook.
+   *
+   * This is the main method called by shell hooks on directory change.
+   * It checks trust, resolves secrets, computes the diff, and returns
+   * the commands needed to update the environment.
+   *
+   * @param cwd - The new working directory
+   * @param options - Hook options including shell type
+   * @returns Hook result with commands to execute and optional message
+   *
+   * @example
+   * ```typescript
+   * const result = await client.hook('/projects/myapp', { shell: 'bash' });
+   * if (result.trusted) {
+   *   for (const cmd of result.commands) {
+   *     console.log(cmd); // Execute in shell
+   *   }
+   *   if (result.message) {
+   *     console.error(result.message);
+   *   }
+   * }
+   * ```
+   */
+  async hook(cwd: string, options: HookOptions): Promise<HookResult> {
+    // Check if autoload is disabled
+    if (process.env["BURROW_AUTOLOAD"] === "0") {
+      const emptyDiff: HookDiff = { unset: [], set: [], skipped: [], unchanged: [] };
+      return {
+        commands: [],
+        diff: emptyDiff,
+        trusted: false,
+        notTrustedReason: "autoload-disabled",
+      };
+    }
+
+    // Check if directory is trusted
+    const trustResult = await this.isTrusted({ path: cwd });
+    if (!trustResult.trusted) {
+      const emptyDiff: HookDiff = { unset: [], set: [], skipped: [], unchanged: [] };
+      return {
+        commands: [],
+        diff: emptyDiff,
+        trusted: false,
+        notTrustedReason: trustResult.reason,
+      };
+    }
+
+    // Resolve secrets for the new directory
+    const newSecrets = await this.resolve(cwd);
+
+    // Get current state
+    const currentState = await this.hookStateManager.load();
+
+    // Compute diff
+    const diff = this.hookStateManager.computeDiff(currentState, newSecrets);
+
+    // Generate shell commands
+    const commands = generateShellCommands(diff, options.shell);
+
+    // Apply diff and update state
+    await this.hookStateManager.applyDiff(currentState, diff, cwd);
+
+    // Generate message
+    const useColor = options.useColor ?? !process.env["NO_COLOR"];
+    const message = formatHookMessage(diff, useColor);
+
+    return {
+      commands,
+      message,
+      diff,
+      trusted: true,
+    };
   }
 
   /**
