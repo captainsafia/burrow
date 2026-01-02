@@ -54,6 +54,6 @@
     "@inquirer/password": "^5.0.3",
     "clipboardy": "^5.0.2",
     "commander": "^14.0.2",
-    "gh-release-update-notifier": "^1.0.0"
+    "gh-release-update-notifier": "^1.0.1"
   }
 }
