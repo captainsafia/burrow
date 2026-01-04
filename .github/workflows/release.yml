@@ -146,12 +146,12 @@ jobs:
 
             **Install script (Linux/macOS):**
             ```bash
-            curl -fsSL https://i.captainsafia.sh/captainsafia/burrow/preview | sh
+            curl -fsSL https://i.captainsafia.sh/captainsafia/burrow/v${{ env.PRERELEASE_VERSION }} | sh
             ```
 
             **npm:**
             ```bash
-            npm install burrow@preview
+            npm install burrow@v${{ env.PRERELEASE_VERSION }}
             ```
 
             **Binary (Linux/macOS):**
