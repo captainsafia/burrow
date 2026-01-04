@@ -107,7 +107,7 @@ jobs:
             ### Quick Install (Linux/macOS)
 
             \`\`\`bash
-            curl -fsSL https://safia.rocks/burrow/install.sh | sh -s -- --pr ${prNum}
+            curl -fsSL https://i.captainsafia.sh/captainsafia/burrow/pr/${prNum} | sh
             \`\`\`
 
             Or download artifacts manually from the [Actions run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
