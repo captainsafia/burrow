@@ -19,7 +19,7 @@ Burrow is a platform-agnostic, directory-scoped secrets manager. Secrets are sto
 **Linux/macOS:**
 
 ```bash
-curl -fsSL https://safia.rocks/burrow/install.sh | sh
+curl -fsSL https://i.captainsafia.sh/captainsafia/burrow | sh
 ```
 
 ## Usage

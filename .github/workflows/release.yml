@@ -146,7 +146,7 @@ jobs:
 
             **Install script (Linux/macOS):**
             ```bash
-            curl -fsSL https://safia.rocks/burrow/install.sh | sh -s -- v${{ env.PRERELEASE_VERSION }}
+            curl -fsSL https://i.captainsafia.sh/captainsafia/burrow/preview | sh
             ```
 
             **npm:**
@@ -225,7 +225,7 @@ jobs:
 
             **Install script (Linux/macOS):**
             ```bash
-            curl -fsSL https://safia.rocks/burrow/install.sh | sh -s -- v${{ env.VERSION }}
+            curl -fsSL https://i.captainsafia.sh/captainsafia/burrow/v${{ env.VERSION }} | sh
             ```
 
             **npm:**
