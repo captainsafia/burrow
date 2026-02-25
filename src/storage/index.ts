@@ -1,10 +1,18 @@
 import { Database } from "bun:sqlite";
-import { chmod, mkdir } from "node:fs/promises";
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getConfigDir } from "../platform/index.ts";
 import { isWindows } from "../platform/index.ts";
 
 const DEFAULT_STORE_FILE = "store.db";
+const ENCRYPTION_KEY_FILE = "store.key";
+const ENCRYPTED_VALUE_PREFIX = "enc:v1:";
+const ENCRYPTION_ALGORITHM = "aes-256-gcm";
+const ENCRYPTION_KEY_LENGTH_BYTES = 32;
+const ENCRYPTION_IV_LENGTH_BYTES = 12;
+const ENCRYPTION_AUTH_TAG_LENGTH_BYTES = 16;
+const CURRENT_STORE_VERSION = 2;
 
 export interface SecretEntry {
   value: string | null;
@@ -30,6 +38,7 @@ export class Storage {
   private readonly configDir: string;
   private readonly storeFileName: string;
   private db: Database | null = null;
+  private encryptionKey: Buffer | null = null;
 
   constructor(options: StorageOptions = {}) {
     this.configDir = options.configDir ?? getConfigDir();
@@ -38,6 +47,131 @@ export class Storage {
 
   private get storePath(): string {
     return join(this.configDir, this.storeFileName);
+  }
+
+  private get encryptionKeyPath(): string {
+    return join(this.configDir, ENCRYPTION_KEY_FILE);
+  }
+
+  private parseStoredKey(content: string): Buffer {
+    const trimmed = content.trim();
+    if (!/^[a-fA-F0-9]{64}$/.test(trimmed)) {
+      throw new Error("Invalid encryption key file format");
+    }
+    return Buffer.from(trimmed, "hex");
+  }
+
+  private async createEncryptionKeyFile(): Promise<Buffer> {
+    const key = randomBytes(ENCRYPTION_KEY_LENGTH_BYTES);
+    const encoded = `${key.toString("hex")}\n`;
+
+    try {
+      await writeFile(this.encryptionKeyPath, encoded, {
+        encoding: "utf8",
+        flag: "wx",
+        mode: 0o600,
+      });
+      return key;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw error;
+      }
+
+      const existingContent = await readFile(this.encryptionKeyPath, "utf8");
+      return this.parseStoredKey(existingContent);
+    }
+  }
+
+  private async ensureEncryptionKey(): Promise<Buffer> {
+    if (this.encryptionKey) {
+      return this.encryptionKey;
+    }
+
+    let key: Buffer;
+    try {
+      const content = await readFile(this.encryptionKeyPath, "utf8");
+      key = this.parseStoredKey(content);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+      key = await this.createEncryptionKeyFile();
+    }
+
+    if (!isWindows()) {
+      await chmod(this.encryptionKeyPath, 0o600);
+    }
+
+    this.encryptionKey = key;
+    return key;
+  }
+
+  private encryptValue(value: string, key: Buffer): string {
+    const iv = randomBytes(ENCRYPTION_IV_LENGTH_BYTES);
+    const cipher = createCipheriv(ENCRYPTION_ALGORITHM, key, iv);
+    const ciphertext = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+    const authTag = cipher.getAuthTag();
+    const payload = Buffer.concat([iv, authTag, ciphertext]).toString("base64");
+    return `${ENCRYPTED_VALUE_PREFIX}${payload}`;
+  }
+
+  private decryptValue(value: string, key: Buffer): string {
+    const payload = Buffer.from(value.slice(ENCRYPTED_VALUE_PREFIX.length), "base64");
+    if (payload.length < ENCRYPTION_IV_LENGTH_BYTES + ENCRYPTION_AUTH_TAG_LENGTH_BYTES) {
+      throw new Error("Encrypted secret payload is corrupted");
+    }
+
+    const iv = payload.subarray(0, ENCRYPTION_IV_LENGTH_BYTES);
+    const authTag = payload.subarray(
+      ENCRYPTION_IV_LENGTH_BYTES,
+      ENCRYPTION_IV_LENGTH_BYTES + ENCRYPTION_AUTH_TAG_LENGTH_BYTES
+    );
+    const ciphertext = payload.subarray(
+      ENCRYPTION_IV_LENGTH_BYTES + ENCRYPTION_AUTH_TAG_LENGTH_BYTES
+    );
+
+    try {
+      const decipher = createDecipheriv(ENCRYPTION_ALGORITHM, key, iv);
+      decipher.setAuthTag(authTag);
+      return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+    } catch {
+      throw new Error(
+        "Failed to decrypt a stored secret. The encryption key may be missing or mismatched."
+      );
+    }
+  }
+
+  private async migrateV1SecretsToEncrypted(db: Database): Promise<void> {
+    const rows = db
+      .query<{ path: string; key: string; value: string }, []>(
+        "SELECT path, key, value FROM secrets WHERE value IS NOT NULL"
+      )
+      .all();
+
+    if (rows.length === 0) {
+      return;
+    }
+
+    const encryptionKey = await this.ensureEncryptionKey();
+    const updateStatement = db.query(
+      "UPDATE secrets SET value = ? WHERE path = ? AND key = ?"
+    );
+
+    db.run("BEGIN IMMEDIATE");
+    try {
+      for (const row of rows) {
+        if (row.value.startsWith(ENCRYPTED_VALUE_PREFIX)) {
+          continue;
+        }
+
+        const encryptedValue = this.encryptValue(row.value, encryptionKey);
+        updateStatement.run(encryptedValue, row.path, row.key);
+      }
+      db.run("COMMIT");
+    } catch (error) {
+      db.run("ROLLBACK");
+      throw error;
+    }
   }
 
   private async ensureDb(): Promise<Database> {
@@ -89,10 +223,13 @@ export class Storage {
     const currentVersion = versionResult?.user_version ?? 0;
 
     if (currentVersion === 0) {
-      this.db.run("PRAGMA user_version = 1");
-    } else if (currentVersion !== 1) {
+      this.db.run(`PRAGMA user_version = ${CURRENT_STORE_VERSION}`);
+    } else if (currentVersion === 1) {
+      await this.migrateV1SecretsToEncrypted(this.db);
+      this.db.run(`PRAGMA user_version = ${CURRENT_STORE_VERSION}`);
+    } else if (currentVersion !== CURRENT_STORE_VERSION) {
       throw new Error(
-        `Unsupported store version: ${currentVersion}. Expected: 1`
+        `Unsupported store version: ${currentVersion}. Expected: ${CURRENT_STORE_VERSION}`
       );
     }
 
@@ -106,6 +243,8 @@ export class Storage {
   ): Promise<void> {
     const db = await this.ensureDb();
     const updatedAt = new Date().toISOString();
+    const encryptedValue =
+      value === null ? null : this.encryptValue(value, await this.ensureEncryptionKey());
 
     db.query(`
       INSERT INTO secrets (path, key, value, updated_at)
@@ -113,7 +252,7 @@ export class Storage {
       ON CONFLICT(path, key) DO UPDATE SET
         value = excluded.value,
         updated_at = excluded.updated_at
-    `).run(canonicalPath, key, value, updatedAt);
+    `).run(canonicalPath, key, encryptedValue, updatedAt);
   }
 
   async getPathSecrets(canonicalPath: string): Promise<PathSecrets | undefined> {
@@ -129,10 +268,22 @@ export class Storage {
       return undefined;
     }
 
+    const hasEncryptedRows = rows.some(
+      (row) => row.value !== null && row.value.startsWith(ENCRYPTED_VALUE_PREFIX)
+    );
+    const encryptionKey = hasEncryptedRows ? await this.ensureEncryptionKey() : null;
+
     const secrets: PathSecrets = {};
     for (const row of rows) {
+      const value =
+        row.value === null
+          ? null
+          : row.value.startsWith(ENCRYPTED_VALUE_PREFIX)
+            ? this.decryptValue(row.value, encryptionKey!)
+            : row.value;
+
       secrets[row.key] = {
-        value: row.value,
+        value,
         updatedAt: row.updated_at,
       };
     }
@@ -350,6 +501,7 @@ export class Storage {
       this.db.close();
       this.db = null;
     }
+    this.encryptionKey = null;
   }
 
   /**

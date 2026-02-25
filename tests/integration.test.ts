@@ -825,7 +825,7 @@ describe("Integration Tests", () => {
       const { Database } = await import("bun:sqlite");
       const db = new Database(join(ctx.configDir, "store.db"));
       const version = db.query("PRAGMA user_version").get() as { user_version: number };
-      expect(version.user_version).toBe(1);
+      expect(version.user_version).toBe(2);
       db.close();
     });
 
@@ -840,7 +840,7 @@ describe("Integration Tests", () => {
       const { Database } = await import("bun:sqlite");
       const db = new Database(join(ctx.configDir, "store.db"));
       const version = db.query("PRAGMA user_version").get() as { user_version: number };
-      expect(version.user_version).toBe(1);
+      expect(version.user_version).toBe(2);
       db.close();
 
       const get = await runBurrow(["get", "KEY"], {
@@ -848,6 +848,26 @@ describe("Integration Tests", () => {
         configDir: ctx.configDir,
       });
       expect(get.exitCode).toBe(0);
+    });
+
+    test("24. Secrets are encrypted at rest", async () => {
+      await runBurrow(["set", "ENCRYPTED_KEY=super_secret_value"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const { Database } = await import("bun:sqlite");
+      const db = new Database(join(ctx.configDir, "store.db"));
+      const row = db
+        .query<{ value: string | null }, [string]>(
+          "SELECT value FROM secrets WHERE key = ? LIMIT 1"
+        )
+        .get("ENCRYPTED_KEY");
+      db.close();
+
+      expect(row?.value).toBeDefined();
+      expect(row?.value).not.toBe("super_secret_value");
+      expect(row?.value?.startsWith("enc:v1:")).toBe(true);
     });
   });
 

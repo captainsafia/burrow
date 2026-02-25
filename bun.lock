@@ -8,7 +8,7 @@
         "@inquirer/password": "^5.0.3",
         "clipboardy": "^5.0.2",
         "commander": "^14.0.2",
-        "gh-release-update-notifier": "^1.0.0",
+        "gh-release-update-notifier": "^1.0.1",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -72,7 +72,7 @@
 
     "get-stream": ["get-stream@9.0.1", "", { "dependencies": { "@sec-ant/readable-stream": "^0.4.1", "is-stream": "^4.0.1" } }, "sha512-kVCxPF3vQM/N0B1PmoqVUqgHP+EeVjmZSQn+1oCRPxd2P21P2F19lIgbR3HBosbB1PUhOAoctJnfEn2GbN2eZA=="],
 
-    "gh-release-update-notifier": ["gh-release-update-notifier@1.0.0", "", {}, "sha512-KYL9pflp43usNsBP8+I3NZtcqUUH4et3erkSDqG5eLmEvh+GbjSSsF7o+iYzM+Sw6PtFq9Szh6i4dn3gs8+oDQ=="],
+    "gh-release-update-notifier": ["gh-release-update-notifier@1.0.1", "", {}, "sha512-dwZljx5/PoMRxrEPC27Gyykg9F9FbyPS+vSO8Za09xUqeR0hvJ9SMnfTn8OrPyZLHZvYmkETB9CEPIEa8HM/Yw=="],
 
     "human-signals": ["human-signals@8.0.1", "", {}, "sha512-eKCa6bwnJhvxj14kZk5NCPc6Hb6BdsU9DZcOnmQKSnO1VKrfV0zCvtttPZUsBvjmNDn8rpcJfpwSYnHBjc95MQ=="],
 

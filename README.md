@@ -1,6 +1,6 @@
 # burrow
 
-Burrow is a platform-agnostic, directory-scoped secrets manager. Secrets are stored outside your repos in a local SQLite store and exportable to various formats via the CLI. For a nicer dev experience, Burrow currently stores secrets in a plain-text format outside the target repo, which means that secrets can still be leaked to other users on your machine or people who gain access to your device. But, for your day-to-day dev use, this beats keeping secrets in gitignored files in your repo.
+Burrow is a platform-agnostic, directory-scoped secrets manager. Secrets are stored outside your repos in a local SQLite store and exportable to various formats via the CLI. Secret values are encrypted at rest before being written to disk.
 
 <p align="center">
   <img src="demo.gif" alt="burrow demo" width="600">
@@ -90,6 +90,7 @@ Unlike `unset` which blocks inheritance, `remove` deletes the entry entirely, re
 Secrets are stored in your user profile:
 - **Linux/macOS:** `$XDG_CONFIG_HOME/burrow` or `~/.config/burrow`
 - **Windows:** `%APPDATA%\burrow`
+- **Encryption key:** `<config dir>/store.key` (created automatically with restrictive permissions)
 
 When you request secrets for a directory, burrow:
 

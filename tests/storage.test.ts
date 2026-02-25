@@ -50,6 +50,37 @@ describe("Storage", () => {
       expect(secrets?.["MY_KEY"]?.updatedAt).toBe("2025-01-01T00:00:00.000Z");
     });
 
+    test("migrates plaintext v1 secrets to encrypted values", async () => {
+      const db = new Database(join(testDir, "store.db"));
+      db.run("PRAGMA user_version = 1");
+      db.run(`
+        CREATE TABLE secrets (path TEXT NOT NULL, key TEXT NOT NULL, value TEXT, updated_at TEXT NOT NULL, PRIMARY KEY (path, key))
+      `);
+      db.run(
+        "INSERT INTO secrets (path, key, value, updated_at) VALUES ('/legacy/path', 'LEGACY_KEY', 'legacy_value', '2025-01-01T00:00:00.000Z')"
+      );
+      db.close();
+
+      const secrets = await storage.getPathSecrets("/legacy/path");
+      expect(secrets?.["LEGACY_KEY"]?.value).toBe("legacy_value");
+
+      const migratedDb = new Database(join(testDir, "store.db"));
+      const version = migratedDb
+        .query<{ user_version: number }, []>("PRAGMA user_version")
+        .get();
+      const row = migratedDb
+        .query<{ value: string | null }, [string, string]>(
+          "SELECT value FROM secrets WHERE path = ? AND key = ?"
+        )
+        .get("/legacy/path", "LEGACY_KEY");
+      migratedDb.close();
+
+      expect(version?.user_version).toBe(2);
+      expect(row?.value).toBeDefined();
+      expect(row?.value).not.toBe("legacy_value");
+      expect(row?.value?.startsWith("enc:v1:")).toBe(true);
+    });
+
     test("throws on unsupported version", async () => {
       const db = new Database(join(testDir, "store.db"));
       db.run("PRAGMA user_version = 999");
@@ -83,6 +114,22 @@ describe("Storage", () => {
 
       const secrets = await storage.getPathSecrets("/test");
       expect(secrets?.["KEY"]?.value).toBeNull();
+    });
+
+    test("stores encrypted values at rest", async () => {
+      await storage.setSecret("/test", "KEY", "sensitive_value");
+
+      const db = new Database(join(testDir, "store.db"));
+      const row = db
+        .query<{ value: string | null }, [string, string]>(
+          "SELECT value FROM secrets WHERE path = ? AND key = ?"
+        )
+        .get("/test", "KEY");
+      db.close();
+
+      expect(row?.value).toBeDefined();
+      expect(row?.value).not.toBe("sensitive_value");
+      expect(row?.value?.startsWith("enc:v1:")).toBe(true);
     });
 
     test("sets updatedAt timestamp", async () => {
