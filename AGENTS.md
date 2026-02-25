@@ -46,3 +46,26 @@ Tests use Bun's native test runner with files in the `tests/` directory. Each te
 ## Commit Standards
 
 All commits must follow Conventional Commits format with lowercase types (feat, fix, chore, test, docs), imperative mood verbs, and subject lines under 72 characters.
+
+## Cursor Cloud specific instructions
+
+Bun is installed at `~/.bun/bin/bun`. The update script runs `bun install` automatically on VM startup.
+
+### Running the project
+
+This is a zero-external-services project — no Docker, databases, or background services needed. Everything runs via Bun.
+
+- **Typecheck:** `bun run typecheck`
+- **Tests:** `bun test` (225 tests across 8 files, ~13s)
+- **Build npm package:** `bun run build`
+- **Compile standalone binary:** `bun run compile` (produces `./burrow`)
+- **Run CLI directly:** `bun src/cli.ts <command>` or `./burrow <command>` after compiling
+
+### Testing secrets in isolation
+
+Use `BURROW_CONFIG_DIR` env var to point the CLI/library at a temp directory, avoiding interference with real config. Integration tests already do this — see `tests/integration.test.ts` for patterns.
+
+### Gotchas
+
+- `get` and `list` commands resolve secrets from cwd (no `--path` flag). Use `set`, `unset`, `remove`, and `export` with `-p/--path` to target a specific directory.
+- The `--copy` flag on `export` requires `xclip` or `xsel` on Linux; failures are caught and produce a warning, not an error.
