@@ -90,7 +90,18 @@ Unlike `unset` which blocks inheritance, `remove` deletes the entry entirely, re
 Secrets are stored in your user profile:
 - **Linux/macOS:** `$XDG_CONFIG_HOME/burrow` or `~/.config/burrow`
 - **Windows:** `%APPDATA%\burrow`
-- **Encryption key:** `<config dir>/store.key` (created automatically with restrictive permissions)
+
+Encryption keys are stored in the OS-specific secure store (not in your Burrow config directory):
+- **macOS:** Keychain (via `security`)
+- **Linux:** Secret Service / keyring (via `secret-tool`)
+- **Windows:** DPAPI-protected user storage
+
+For headless environments (for example, CI), you can provide a key explicitly:
+
+```bash
+# 64-char hex (32 bytes)
+export BURROW_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+```
 
 When you request secrets for a directory, burrow:
 

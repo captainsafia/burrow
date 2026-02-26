@@ -3,6 +3,9 @@ import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { BurrowClient } from "../src/api.ts";
+import { ensureTestEncryptionKey } from "./helpers/encryption-key.ts";
+
+ensureTestEncryptionKey();
 
 describe("BurrowClient", () => {
   let testDir: string;

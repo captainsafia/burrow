@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Resolver } from "../src/core/resolver.ts";
 import { Storage } from "../src/storage/index.ts";
+import { ensureTestEncryptionKey } from "./helpers/encryption-key.ts";
+
+ensureTestEncryptionKey();
 
 describe("Resolver", () => {
   let testDir: string;

@@ -1,12 +1,16 @@
 import { Database } from "bun:sqlite";
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { chmod, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { getConfigDir } from "../platform/index.ts";
 import { isWindows } from "../platform/index.ts";
+import {
+  createSystemSecretStore,
+  type SecretStore,
+} from "../platform/secret-store.ts";
 
 const DEFAULT_STORE_FILE = "store.db";
-const ENCRYPTION_KEY_FILE = "store.key";
+const ENCRYPTION_KEY_ENV = "BURROW_ENCRYPTION_KEY";
 const ENCRYPTED_VALUE_PREFIX = "enc:v1:";
 const ENCRYPTION_ALGORITHM = "aes-256-gcm";
 const ENCRYPTION_KEY_LENGTH_BYTES = 32;
@@ -32,54 +36,53 @@ export interface TrustedPath {
 export interface StorageOptions {
   configDir?: string;
   storeFileName?: string;
+  secretStore?: SecretStore;
 }
 
 export class Storage {
   private readonly configDir: string;
   private readonly storeFileName: string;
+  private readonly secretStore: SecretStore;
+  private readonly keyIdentifier: string;
   private db: Database | null = null;
   private encryptionKey: Buffer | null = null;
 
   constructor(options: StorageOptions = {}) {
     this.configDir = options.configDir ?? getConfigDir();
     this.storeFileName = options.storeFileName ?? DEFAULT_STORE_FILE;
+    this.secretStore = options.secretStore ?? createSystemSecretStore();
+    this.keyIdentifier = createHash("sha256")
+      .update(`${this.configDir}:${this.storeFileName}`)
+      .digest("hex");
   }
 
   private get storePath(): string {
     return join(this.configDir, this.storeFileName);
   }
 
-  private get encryptionKeyPath(): string {
-    return join(this.configDir, ENCRYPTION_KEY_FILE);
-  }
-
   private parseStoredKey(content: string): Buffer {
     const trimmed = content.trim();
     if (!/^[a-fA-F0-9]{64}$/.test(trimmed)) {
-      throw new Error("Invalid encryption key file format");
+      throw new Error("Invalid encryption key format");
     }
     return Buffer.from(trimmed, "hex");
   }
 
-  private async createEncryptionKeyFile(): Promise<Buffer> {
-    const key = randomBytes(ENCRYPTION_KEY_LENGTH_BYTES);
-    const encoded = `${key.toString("hex")}\n`;
+  private parseEnvEncryptionKey(envValue: string): Buffer {
+    const trimmed = envValue.trim();
 
-    try {
-      await writeFile(this.encryptionKeyPath, encoded, {
-        encoding: "utf8",
-        flag: "wx",
-        mode: 0o600,
-      });
-      return key;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
-        throw error;
-      }
-
-      const existingContent = await readFile(this.encryptionKeyPath, "utf8");
-      return this.parseStoredKey(existingContent);
+    if (/^[a-fA-F0-9]{64}$/.test(trimmed)) {
+      return Buffer.from(trimmed, "hex");
     }
+
+    const decoded = Buffer.from(trimmed, "base64");
+    if (decoded.length === ENCRYPTION_KEY_LENGTH_BYTES) {
+      return decoded;
+    }
+
+    throw new Error(
+      `Invalid ${ENCRYPTION_KEY_ENV} value. Expected 64-char hex or base64-encoded 32-byte key.`
+    );
   }
 
   private async ensureEncryptionKey(): Promise<Buffer> {
@@ -87,23 +90,29 @@ export class Storage {
       return this.encryptionKey;
     }
 
-    let key: Buffer;
+    const envKey = process.env[ENCRYPTION_KEY_ENV];
+    if (envKey) {
+      this.encryptionKey = this.parseEnvEncryptionKey(envKey);
+      return this.encryptionKey;
+    }
+
     try {
-      const content = await readFile(this.encryptionKeyPath, "utf8");
-      key = this.parseStoredKey(content);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        throw error;
+      const existingKey = await this.secretStore.getSecret(this.keyIdentifier);
+      if (existingKey) {
+        this.encryptionKey = this.parseStoredKey(existingKey);
+        return this.encryptionKey;
       }
-      key = await this.createEncryptionKeyFile();
-    }
 
-    if (!isWindows()) {
-      await chmod(this.encryptionKeyPath, 0o600);
+      const generatedKey = randomBytes(ENCRYPTION_KEY_LENGTH_BYTES);
+      await this.secretStore.setSecret(this.keyIdentifier, generatedKey.toString("hex"));
+      this.encryptionKey = generatedKey;
+      return generatedKey;
+    } catch (error) {
+      throw new Error(
+        `Failed to access encryption key in ${this.secretStore.backendName}: ${(error as Error).message}. ` +
+          `Set ${ENCRYPTION_KEY_ENV} to a 32-byte key as fallback.`
+      );
     }
-
-    this.encryptionKey = key;
-    return key;
   }
 
   private encryptValue(value: string, key: Buffer): string {

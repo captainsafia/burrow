@@ -6,6 +6,9 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Storage } from "../src/storage/index.ts";
 import * as platform from "../src/platform/index.ts";
+import { ensureTestEncryptionKey } from "./helpers/encryption-key.ts";
+
+ensureTestEncryptionKey();
 
 describe("Storage", () => {
   let testDir: string;
@@ -25,6 +28,11 @@ describe("Storage", () => {
     test("creates database when first operation is performed", async () => {
       await storage.setSecret("/test", "KEY", "value");
       expect(existsSync(join(testDir, "store.db"))).toBe(true);
+    });
+
+    test("does not persist encryption key to a local file", async () => {
+      await storage.setSecret("/test", "KEY", "value");
+      expect(existsSync(join(testDir, "store.key"))).toBe(false);
     });
 
     test("creates config directory if it does not exist", async () => {
