@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 
 const SECRET_STORE_TIMEOUT_MS = 10000;
-const BURROW_SERVICE_NAME = "dev.captainsafia.burrow";
+const BURROW_SERVICE_NAME = "burrow.safia.dev";
 
 interface CommandResult {
   stdout: string;
