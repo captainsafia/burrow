@@ -2,6 +2,8 @@ import { spawn } from "node:child_process";
 
 const SECRET_STORE_TIMEOUT_MS = 10000;
 const BURROW_SERVICE_NAME = "burrow.safia.dev";
+// `security` returns the lower 8 bits of `errSecItemNotFound` (-25300), which is 44.
+const MACOS_ITEM_NOT_FOUND_EXIT_CODE = 44;
 
 interface CommandResult {
   stdout: string;
@@ -118,7 +120,7 @@ class MacOsKeychainSecretStore implements SecretStore {
       return result.stdout;
     }
 
-    if (result.exitCode === 44) {
+    if (result.exitCode === MACOS_ITEM_NOT_FOUND_EXIT_CODE) {
       return undefined;
     }
 
