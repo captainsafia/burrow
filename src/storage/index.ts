@@ -3,8 +3,10 @@ import { chmod, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { getConfigDir } from "../platform/index.ts";
 import { isWindows } from "../platform/index.ts";
+import { SecretValueEncryptor } from "./encryption.ts";
 
 const DEFAULT_STORE_FILE = "store.db";
+const STORE_VERSION = 2;
 
 export interface SecretEntry {
   value: string | null;
@@ -29,11 +31,13 @@ export interface StorageOptions {
 export class Storage {
   private readonly configDir: string;
   private readonly storeFileName: string;
+  private readonly encryptor: SecretValueEncryptor;
   private db: Database | null = null;
 
   constructor(options: StorageOptions = {}) {
     this.configDir = options.configDir ?? getConfigDir();
     this.storeFileName = options.storeFileName ?? DEFAULT_STORE_FILE;
+    this.encryptor = new SecretValueEncryptor(this.configDir);
   }
 
   private get storePath(): string {
@@ -88,15 +92,62 @@ export class Storage {
       .get();
     const currentVersion = versionResult?.user_version ?? 0;
 
-    if (currentVersion === 0) {
-      this.db.run("PRAGMA user_version = 1");
-    } else if (currentVersion !== 1) {
+    if (currentVersion === 0 || currentVersion === 1) {
+      await this.migrateValuesToEncryption(this.db);
+      this.db.run(`PRAGMA user_version = ${STORE_VERSION}`);
+    } else if (currentVersion !== STORE_VERSION) {
       throw new Error(
-        `Unsupported store version: ${currentVersion}. Expected: 1`
+        `Unsupported store version: ${currentVersion}. Expected: ${STORE_VERSION}`
       );
     }
 
     return this.db;
+  }
+
+  private async migrateValuesToEncryption(db: Database): Promise<void> {
+    const rows = db
+      .query<{ path: string; key: string; value: string }, []>(
+        "SELECT path, key, value FROM secrets WHERE value IS NOT NULL"
+      )
+      .all();
+
+    if (rows.length === 0) {
+      return;
+    }
+
+    interface UpdateRow {
+      path: string;
+      key: string;
+      value: string;
+    }
+
+    const updates: UpdateRow[] = [];
+    for (const row of rows) {
+      if (this.encryptor.isEncryptedValue(row.value)) {
+        continue;
+      }
+
+      updates.push({
+        path: row.path,
+        key: row.key,
+        value: await this.encryptor.encrypt(row.value),
+      });
+    }
+
+    if (updates.length === 0) {
+      return;
+    }
+
+    const updateSecret = db.query(
+      "UPDATE secrets SET value = ? WHERE path = ? AND key = ?"
+    );
+    const applyUpdates = db.transaction((pendingUpdates: UpdateRow[]) => {
+      for (const update of pendingUpdates) {
+        updateSecret.run(update.value, update.path, update.key);
+      }
+    });
+
+    applyUpdates(updates);
   }
 
   async setSecret(
@@ -106,6 +157,7 @@ export class Storage {
   ): Promise<void> {
     const db = await this.ensureDb();
     const updatedAt = new Date().toISOString();
+    const storedValue = value === null ? null : await this.encryptor.encrypt(value);
 
     db.query(`
       INSERT INTO secrets (path, key, value, updated_at)
@@ -113,7 +165,7 @@ export class Storage {
       ON CONFLICT(path, key) DO UPDATE SET
         value = excluded.value,
         updated_at = excluded.updated_at
-    `).run(canonicalPath, key, value, updatedAt);
+    `).run(canonicalPath, key, storedValue, updatedAt);
   }
 
   async getPathSecrets(canonicalPath: string): Promise<PathSecrets | undefined> {
@@ -131,8 +183,11 @@ export class Storage {
 
     const secrets: PathSecrets = {};
     for (const row of rows) {
+      const decodedValue =
+        row.value === null ? null : await this.encryptor.decrypt(row.value);
+
       secrets[row.key] = {
-        value: row.value,
+        value: decodedValue,
         updatedAt: row.updated_at,
       };
     }
