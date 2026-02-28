@@ -1,6 +1,6 @@
 # burrow
 
-Burrow is a platform-agnostic, directory-scoped secrets manager. Secrets are stored outside your repos in a local SQLite store and exportable to various formats via the CLI. For a nicer dev experience, Burrow currently stores secrets in a plain-text format outside the target repo, which means that secrets can still be leaked to other users on your machine or people who gain access to your device. But, for your day-to-day dev use, this beats keeping secrets in gitignored files in your repo.
+Burrow is a platform-agnostic, directory-scoped secrets manager. Secrets are stored outside your repos in a local SQLite store and exportable to various formats via the CLI. Secret values are encrypted at rest before being written to SQLite.
 
 <p align="center">
   <img src="demo.gif" alt="burrow demo" width="600">
@@ -97,6 +97,22 @@ When you request secrets for a directory, burrow:
 2. Merges them from shallowest to deepest
 3. Deeper scopes override shallower ones
 4. Tombstones (from `unset`) block inheritance
+
+### Encryption at rest
+
+Burrow encrypts non-null secret values with AES-256-GCM before writing them to `store.db`.
+
+- **Primary key storage:** Burrow uses `Bun.secrets` to store a per-config encryption key in the OS credential store (Keychain on macOS, libsecret providers on Linux, and Credential Manager on Windows).
+- **Headless fallback:** if `Bun.secrets` is unavailable (for example in minimal CI containers without a running secret service), Burrow stores the key in `store.key` in the config directory with restrictive permissions on Unix.
+
+### Migration strategy
+
+Burrow uses a versioned database schema and encrypted payload format:
+
+1. **Schema migration (v1 → v2):** on first access, Burrow upgrades legacy stores to schema version 2.
+2. **In-place value migration:** all non-null plaintext values are encrypted and written back in place.
+3. **Idempotent migration:** values already marked as encrypted are skipped, so migration can be safely retried.
+4. **Future encrypted migrations:** encrypted payloads include a version prefix (`burrow:enc:v1:`), so future formats can be migrated deterministically.
 
 ## Library Usage
 

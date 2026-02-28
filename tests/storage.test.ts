@@ -48,6 +48,20 @@ describe("Storage", () => {
       const secrets = await storage.getPathSecrets("/test/path");
       expect(secrets?.["MY_KEY"]?.value).toBe("my_value");
       expect(secrets?.["MY_KEY"]?.updatedAt).toBe("2025-01-01T00:00:00.000Z");
+
+      const migratedDb = new Database(join(testDir, "store.db"));
+      const version = migratedDb.query("PRAGMA user_version").get() as { user_version: number };
+      const row = migratedDb
+        .query<{ value: string }, []>(
+          "SELECT value FROM secrets WHERE path = '/test/path' AND key = 'MY_KEY'"
+        )
+        .get();
+      migratedDb.close();
+
+      expect(version.user_version).toBe(2);
+      expect(row?.value).toBeDefined();
+      expect(row?.value).not.toBe("my_value");
+      expect(row?.value.startsWith("burrow:enc:v1:")).toBe(true);
     });
 
     test("throws on unsupported version", async () => {
@@ -83,6 +97,22 @@ describe("Storage", () => {
 
       const secrets = await storage.getPathSecrets("/test");
       expect(secrets?.["KEY"]?.value).toBeNull();
+    });
+
+    test("stores encrypted values at rest", async () => {
+      await storage.setSecret("/test", "KEY", "value");
+
+      const db = new Database(join(testDir, "store.db"));
+      const row = db
+        .query<{ value: string | null }, []>(
+          "SELECT value FROM secrets WHERE path = '/test' AND key = 'KEY'"
+        )
+        .get();
+      db.close();
+
+      expect(row?.value).toBeDefined();
+      expect(row?.value).not.toBe("value");
+      expect(row?.value?.startsWith("burrow:enc:v1:")).toBe(true);
     });
 
     test("sets updatedAt timestamp", async () => {

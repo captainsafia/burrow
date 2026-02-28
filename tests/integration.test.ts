@@ -825,8 +825,28 @@ describe("Integration Tests", () => {
       const { Database } = await import("bun:sqlite");
       const db = new Database(join(ctx.configDir, "store.db"));
       const version = db.query("PRAGMA user_version").get() as { user_version: number };
-      expect(version.user_version).toBe(1);
+      expect(version.user_version).toBe(2);
       db.close();
+    });
+
+    test("22b. Stored secret values are encrypted at rest", async () => {
+      await runBurrow(["set", "KEY=value"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      const { Database } = await import("bun:sqlite");
+      const db = new Database(join(ctx.configDir, "store.db"));
+      const row = db
+        .query<{ value: string }, []>(
+          "SELECT value FROM secrets WHERE path = ? AND key = ?"
+        )
+        .get(ctx.repo, "KEY");
+      db.close();
+
+      expect(row?.value).toBeDefined();
+      expect(row?.value).not.toBe("value");
+      expect(row?.value.startsWith("burrow:enc:v1:")).toBe(true);
     });
 
     test("23. Repeated sets don't corrupt store", async () => {
@@ -840,7 +860,7 @@ describe("Integration Tests", () => {
       const { Database } = await import("bun:sqlite");
       const db = new Database(join(ctx.configDir, "store.db"));
       const version = db.query("PRAGMA user_version").get() as { user_version: number };
-      expect(version.user_version).toBe(1);
+      expect(version.user_version).toBe(2);
       db.close();
 
       const get = await runBurrow(["get", "KEY"], {
