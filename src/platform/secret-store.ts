@@ -1,7 +1,12 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 const SECRET_STORE_TIMEOUT_MS = 10000;
 const BURROW_SERVICE_NAME = "burrow.safia.dev";
+const BURROW_ENCRYPTION_KEY_ENV = "BURROW_ENCRYPTION_KEY";
+const DBUS_SESSION_BUS_ADDRESS_ENV = "DBUS_SESSION_BUS_ADDRESS";
+const XDG_RUNTIME_DIR_ENV = "XDG_RUNTIME_DIR";
 // `security` returns the lower 8 bits of `errSecItemNotFound` (-25300), which is 44.
 const MACOS_ITEM_NOT_FOUND_EXIT_CODE = 44;
 const UNIX_FALLBACK_PATH_ENTRIES = [
@@ -48,6 +53,27 @@ function formatCommandFailure(command: string, error: unknown): Error {
     : new Error(`Failed to run command "${command}"`);
 }
 
+function discoverLinuxDbusSessionBusAddress(env: NodeJS.ProcessEnv): string | undefined {
+  const xdgRuntimeDir = env[XDG_RUNTIME_DIR_ENV]?.trim();
+  const candidatePaths: string[] = [];
+
+  if (xdgRuntimeDir) {
+    candidatePaths.push(join(xdgRuntimeDir, "bus"));
+  }
+
+  if (typeof process.getuid === "function") {
+    candidatePaths.push(join("/run/user", String(process.getuid()), "bus"));
+  }
+
+  for (const candidatePath of candidatePaths) {
+    if (existsSync(candidatePath)) {
+      return `unix:path=${candidatePath}`;
+    }
+  }
+
+  return undefined;
+}
+
 async function runCommand(
   command: string,
   args: string[],
@@ -70,6 +96,16 @@ async function runCommand(
       }
 
       env["PATH"] = pathEntries.join(":");
+    }
+
+    if (process.platform === "linux") {
+      const currentDbusAddress = env[DBUS_SESSION_BUS_ADDRESS_ENV]?.trim();
+      if (!currentDbusAddress) {
+        const discoveredAddress = discoverLinuxDbusSessionBusAddress(env);
+        if (discoveredAddress) {
+          env[DBUS_SESSION_BUS_ADDRESS_ENV] = discoveredAddress;
+        }
+      }
     }
 
     const child = spawn(command, args, {
@@ -193,10 +229,13 @@ class MacOsKeychainSecretStore implements SecretStore {
 class LinuxSecretServiceStore implements SecretStore {
   readonly backendName = "Linux Secret Service";
 
-  async getSecret(identifier: string): Promise<string | undefined> {
-    let result: CommandResult;
+  private isLockedCollectionError(result: CommandResult): boolean {
+    return /locked collection/i.test(result.stderr);
+  }
+
+  private async runLookup(identifier: string): Promise<CommandResult> {
     try {
-      result = await runCommand("secret-tool", [
+      return await runCommand("secret-tool", [
         "lookup",
         "service",
         BURROW_SERVICE_NAME,
@@ -206,24 +245,11 @@ class LinuxSecretServiceStore implements SecretStore {
     } catch (error) {
       throw formatCommandFailure("secret-tool", error);
     }
-
-    if (result.exitCode === 0) {
-      return result.stdout;
-    }
-
-    if (result.exitCode === 1 && result.stderr.length === 0) {
-      return undefined;
-    }
-
-    throw new Error(
-      `Failed to read key from ${this.backendName}: ${result.stderr || `exit code ${result.exitCode}`}`
-    );
   }
 
-  async setSecret(identifier: string, value: string): Promise<void> {
-    let result: CommandResult;
+  private async runStore(identifier: string, value: string): Promise<CommandResult> {
     try {
-      result = await runCommand(
+      return await runCommand(
         "secret-tool",
         [
           "store",
@@ -238,6 +264,82 @@ class LinuxSecretServiceStore implements SecretStore {
       );
     } catch (error) {
       throw formatCommandFailure("secret-tool", error);
+    }
+  }
+
+  /**
+   * Tries to unlock the collection by triggering Secret Service's unlock flow.
+   * Exit code 1 is acceptable here (no matching items) as long as unlock prompt/flow ran.
+   */
+  private async tryUnlock(identifier: string): Promise<void> {
+    let result: CommandResult;
+    try {
+      result = await runCommand("secret-tool", [
+        "search",
+        "--unlock",
+        "service",
+        BURROW_SERVICE_NAME,
+        "account",
+        identifier,
+      ]);
+    } catch (error) {
+      throw formatCommandFailure("secret-tool", error);
+    }
+
+    if (result.exitCode !== 0 && result.exitCode !== 1) {
+      throw new Error(
+        `Failed to unlock ${this.backendName}: ${result.stderr || `exit code ${result.exitCode}`}`
+      );
+    }
+  }
+
+  private getLockedCollectionGuidance(): string {
+    return (
+      "The Linux secret collection is locked. Unlock your keyring/session and retry. " +
+      "You can usually trigger unlock with `secret-tool search --unlock service burrow.safia.dev account <id>`. " +
+      `For headless environments, set ${BURROW_ENCRYPTION_KEY_ENV} to a 32-byte key.`
+    );
+  }
+
+  async getSecret(identifier: string): Promise<string | undefined> {
+    let result = await this.runLookup(identifier);
+
+    if (this.isLockedCollectionError(result)) {
+      await this.tryUnlock(identifier);
+      result = await this.runLookup(identifier);
+    }
+
+    if (result.exitCode === 0) {
+      return result.stdout;
+    }
+
+    if (result.exitCode === 1 && result.stderr.length === 0) {
+      return undefined;
+    }
+
+    if (this.isLockedCollectionError(result)) {
+      throw new Error(this.getLockedCollectionGuidance());
+    }
+
+    throw new Error(
+      `Failed to read key from ${this.backendName}: ${result.stderr || `exit code ${result.exitCode}`}`
+    );
+  }
+
+  async setSecret(identifier: string, value: string): Promise<void> {
+    let result = await this.runStore(identifier, value);
+
+    if (this.isLockedCollectionError(result)) {
+      await this.tryUnlock(identifier);
+      result = await this.runStore(identifier, value);
+    }
+
+    if (result.exitCode === 0) {
+      return;
+    }
+
+    if (this.isLockedCollectionError(result)) {
+      throw new Error(this.getLockedCollectionGuidance());
     }
 
     if (result.exitCode !== 0) {
