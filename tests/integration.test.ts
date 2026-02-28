@@ -838,7 +838,7 @@ describe("Integration Tests", () => {
       const { Database } = await import("bun:sqlite");
       const db = new Database(join(ctx.configDir, "store.db"));
       const row = db
-        .query<{ value: string }, []>(
+        .query<{ value: string }, [string, string]>(
           "SELECT value FROM secrets WHERE path = ? AND key = ?"
         )
         .get(ctx.repo, "KEY");

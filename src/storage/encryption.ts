@@ -18,7 +18,7 @@ export class SecretValueEncryptor {
   private readonly fallbackKeyPath: string;
   private keyPromise?: Promise<Buffer>;
 
-  constructor(private readonly configDir: string) {
+  constructor(configDir: string) {
     const configHash = createHash("sha256").update(configDir).digest("hex");
     this.keySecretName = `${ENCRYPTION_KEY_NAME_PREFIX}-${configHash}`;
     this.fallbackKeyPath = join(configDir, ENCRYPTION_KEY_FILE);
