@@ -3,7 +3,8 @@ import { chmod, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isWindows } from "../platform/index.ts";
 
-const ENCRYPTION_SERVICE = "burrow";
+const ENCRYPTION_SERVICE = "burrow.safia.dev";
+const LEGACY_ENCRYPTION_SERVICE = "burrow";
 const ENCRYPTION_KEY_NAME_PREFIX = "store-key";
 const ENCRYPTION_KEY_FILE = "store.key";
 const ENCRYPTION_KEY_BYTES = 32;
@@ -129,7 +130,15 @@ export class SecretValueEncryptor {
     }
 
     if (keyMaterial === null) {
-      return undefined;
+      // Backward compatibility: older releases used "burrow" as the service name.
+      keyMaterial = await this.readKeyFromLegacyService();
+      if (keyMaterial === null) {
+        return undefined;
+      }
+
+      const key = parseKeyMaterial(keyMaterial, `Bun.secrets (${LEGACY_ENCRYPTION_SERVICE})`);
+      await this.tryStoreInBunSecrets(key);
+      return key;
     }
 
     return parseKeyMaterial(keyMaterial, "Bun.secrets");
@@ -145,6 +154,17 @@ export class SecretValueEncryptor {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  private async readKeyFromLegacyService(): Promise<string | null> {
+    try {
+      return await Bun.secrets.get({
+        service: LEGACY_ENCRYPTION_SERVICE,
+        name: this.keySecretName,
+      });
+    } catch {
+      return null;
     }
   }
 
