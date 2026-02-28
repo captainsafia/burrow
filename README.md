@@ -92,13 +92,12 @@ Secrets are stored in your user profile:
 - **Windows:** `%APPDATA%\burrow`
 
 Encryption keys are stored in the OS-specific secure store (not in your Burrow config directory):
-- **macOS:** Keychain (via `security`)
-- **Linux:** Secret Service / keyring (via `secret-tool`, usually from `libsecret-tools`)
-- **Windows:** DPAPI-protected user storage
+- **macOS:** Keychain (via `Bun.secrets`)
+- **Linux:** Secret Service / keyring (via `Bun.secrets` + libsecret backend)
+- **Windows:** Credential Manager (via `Bun.secrets`)
 
-On some Linux installs, `secret-tool` is not installed by default and must be installed separately.
 Burrow will auto-discover a user D-Bus session bus on Linux (`$XDG_RUNTIME_DIR/bus` or `/run/user/$UID/bus`) when `DBUS_SESSION_BUS_ADDRESS` is missing, which helps in SSH sessions.
-If your keyring collection is locked, Burrow may fail until you unlock it (for example, via your desktop keyring prompt or `secret-tool search --unlock ...`).
+If your keyring collection is locked, Burrow may fail until you unlock it (for example, via your desktop keyring prompt).
 
 For headless environments (for example, CI), you can provide a key explicitly:
 
