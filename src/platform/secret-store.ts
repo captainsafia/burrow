@@ -4,6 +4,15 @@ const SECRET_STORE_TIMEOUT_MS = 10000;
 const BURROW_SERVICE_NAME = "burrow.safia.dev";
 // `security` returns the lower 8 bits of `errSecItemNotFound` (-25300), which is 44.
 const MACOS_ITEM_NOT_FOUND_EXIT_CODE = 44;
+const UNIX_FALLBACK_PATH_ENTRIES = [
+  "/usr/local/sbin",
+  "/usr/local/bin",
+  "/usr/sbin",
+  "/usr/bin",
+  "/sbin",
+  "/bin",
+  "/snap/bin",
+];
 
 interface CommandResult {
   stdout: string;
@@ -25,7 +34,13 @@ export interface SecretStore {
 function formatCommandFailure(command: string, error: unknown): Error {
   const maybeErr = error as NodeJS.ErrnoException;
   if (maybeErr.code === "ENOENT") {
-    return new Error(`Required command "${command}" is not available`);
+    if (command === "secret-tool") {
+      return new Error(
+        'Required command "secret-tool" is not available. Install libsecret-tools (or libsecret on some distros), ensure it is on PATH, or set BURROW_ENCRYPTION_KEY.'
+      );
+    }
+
+    return new Error(`Required command "${command}" is not available or not on PATH`);
   }
 
   return error instanceof Error
@@ -39,7 +54,28 @@ async function runCommand(
   options: CommandOptions = {}
 ): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] });
+    const env: NodeJS.ProcessEnv = { ...process.env };
+
+    if (process.platform !== "win32") {
+      const currentPath = env["PATH"] ?? "";
+      const pathEntries = currentPath
+        .split(":")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
+
+      for (const fallbackEntry of UNIX_FALLBACK_PATH_ENTRIES) {
+        if (!pathEntries.includes(fallbackEntry)) {
+          pathEntries.push(fallbackEntry);
+        }
+      }
+
+      env["PATH"] = pathEntries.join(":");
+    }
+
+    const child = spawn(command, args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      env,
+    });
     let stdout = "";
     let stderr = "";
     let settled = false;

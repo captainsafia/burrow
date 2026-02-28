@@ -93,8 +93,10 @@ Secrets are stored in your user profile:
 
 Encryption keys are stored in the OS-specific secure store (not in your Burrow config directory):
 - **macOS:** Keychain (via `security`)
-- **Linux:** Secret Service / keyring (via `secret-tool`)
+- **Linux:** Secret Service / keyring (via `secret-tool`, usually from `libsecret-tools`)
 - **Windows:** DPAPI-protected user storage
+
+On some Linux installs, `secret-tool` is not installed by default and must be installed separately.
 
 For headless environments (for example, CI), you can provide a key explicitly:
 
