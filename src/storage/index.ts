@@ -1,22 +1,72 @@
 import { Database } from "bun:sqlite";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import { chmod, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { getConfigDir } from "../platform/index.ts";
 import { isWindows } from "../platform/index.ts";
-import {
-  createSystemSecretStore,
-  type SecretStore,
-} from "../platform/secret-store.ts";
 
 const DEFAULT_STORE_FILE = "store.db";
 const ENCRYPTION_KEY_ENV = "BURROW_ENCRYPTION_KEY";
+const ENCRYPTION_KEY_SERVICE_NAME = "burrow.safia.dev";
+const DBUS_SESSION_BUS_ADDRESS_ENV = "DBUS_SESSION_BUS_ADDRESS";
+const XDG_RUNTIME_DIR_ENV = "XDG_RUNTIME_DIR";
 const ENCRYPTED_VALUE_PREFIX = "enc:v1:";
 const ENCRYPTION_ALGORITHM = "aes-256-gcm";
 const ENCRYPTION_KEY_LENGTH_BYTES = 32;
 const ENCRYPTION_IV_LENGTH_BYTES = 12;
 const ENCRYPTION_AUTH_TAG_LENGTH_BYTES = 16;
 const CURRENT_STORE_VERSION = 2;
+
+function resolveSecretStoreBackendName(): string {
+  switch (process.platform) {
+    case "darwin":
+      return "macOS Keychain";
+    case "linux":
+      return "Linux Secret Service";
+    case "win32":
+      return "Windows Credential Manager";
+    default:
+      return "system secret store";
+  }
+}
+
+function discoverLinuxDbusSessionBusAddress(): string | undefined {
+  const xdgRuntimeDir = process.env[XDG_RUNTIME_DIR_ENV]?.trim();
+  const candidatePaths: string[] = [];
+
+  if (xdgRuntimeDir) {
+    candidatePaths.push(join(xdgRuntimeDir, "bus"));
+  }
+
+  if (typeof process.getuid === "function") {
+    candidatePaths.push(join("/run/user", String(process.getuid()), "bus"));
+  }
+
+  for (const candidatePath of candidatePaths) {
+    if (existsSync(candidatePath)) {
+      return `unix:path=${candidatePath}`;
+    }
+  }
+
+  return undefined;
+}
+
+function ensureLinuxDbusSessionBusAddress(): void {
+  if (process.platform !== "linux") {
+    return;
+  }
+
+  const currentAddress = process.env[DBUS_SESSION_BUS_ADDRESS_ENV]?.trim();
+  if (currentAddress) {
+    return;
+  }
+
+  const discoveredAddress = discoverLinuxDbusSessionBusAddress();
+  if (discoveredAddress) {
+    process.env[DBUS_SESSION_BUS_ADDRESS_ENV] = discoveredAddress;
+  }
+}
 
 export interface SecretEntry {
   value: string | null;
@@ -36,13 +86,11 @@ export interface TrustedPath {
 export interface StorageOptions {
   configDir?: string;
   storeFileName?: string;
-  secretStore?: SecretStore;
 }
 
 export class Storage {
   private readonly configDir: string;
   private readonly storeFileName: string;
-  private readonly secretStore: SecretStore;
   private readonly keyIdentifier: string;
   private db: Database | null = null;
   private encryptionKey: Buffer | null = null;
@@ -50,7 +98,6 @@ export class Storage {
   constructor(options: StorageOptions = {}) {
     this.configDir = options.configDir ?? getConfigDir();
     this.storeFileName = options.storeFileName ?? DEFAULT_STORE_FILE;
-    this.secretStore = options.secretStore ?? createSystemSecretStore();
     this.keyIdentifier = createHash("sha256")
       .update(`${this.configDir}:${this.storeFileName}`)
       .digest("hex");
@@ -96,20 +143,30 @@ export class Storage {
       return this.encryptionKey;
     }
 
+    ensureLinuxDbusSessionBusAddress();
+
     try {
-      const existingKey = await this.secretStore.getSecret(this.keyIdentifier);
-      if (existingKey) {
+      const existingKey = await Bun.secrets.get({
+        service: ENCRYPTION_KEY_SERVICE_NAME,
+        name: this.keyIdentifier,
+      });
+      if (existingKey !== null) {
         this.encryptionKey = this.parseStoredKey(existingKey);
         return this.encryptionKey;
       }
 
       const generatedKey = randomBytes(ENCRYPTION_KEY_LENGTH_BYTES);
-      await this.secretStore.setSecret(this.keyIdentifier, generatedKey.toString("hex"));
+      await Bun.secrets.set({
+        service: ENCRYPTION_KEY_SERVICE_NAME,
+        name: this.keyIdentifier,
+        value: generatedKey.toString("hex"),
+      });
       this.encryptionKey = generatedKey;
       return generatedKey;
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       throw new Error(
-        `Failed to access encryption key in ${this.secretStore.backendName}: ${(error as Error).message}. ` +
+        `Failed to access encryption key in ${resolveSecretStoreBackendName()}: ${message}. ` +
           `Set ${ENCRYPTION_KEY_ENV} to a 32-byte key as fallback.`
       );
     }
