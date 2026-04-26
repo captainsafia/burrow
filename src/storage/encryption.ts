@@ -118,6 +118,10 @@ export class SecretValueEncryptor {
   }
 
   private async readKeyFromBunSecrets(): Promise<Buffer | undefined> {
+    if (!canUseBunSecrets()) {
+      return undefined;
+    }
+
     let keyMaterial: string | null;
 
     try {
@@ -145,6 +149,10 @@ export class SecretValueEncryptor {
   }
 
   private async tryStoreInBunSecrets(key: Buffer): Promise<boolean> {
+    if (!canUseBunSecrets()) {
+      return false;
+    }
+
     try {
       await Bun.secrets.set({
         service: ENCRYPTION_SERVICE,
@@ -158,6 +166,10 @@ export class SecretValueEncryptor {
   }
 
   private async readKeyFromLegacyService(): Promise<string | null> {
+    if (!canUseBunSecrets()) {
+      return null;
+    }
+
     try {
       return await Bun.secrets.get({
         service: LEGACY_ENCRYPTION_SERVICE,
@@ -191,6 +203,20 @@ export class SecretValueEncryptor {
       await chmod(this.fallbackKeyPath, 0o600);
     }
   }
+}
+
+function canUseBunSecrets(): boolean {
+  if (process.env["BURROW_DISABLE_BUN_SECRETS"] === "1") {
+    return false;
+  }
+
+  // On headless Linux systems without a session bus, libsecret-backed
+  // keyring calls can block indefinitely. Use the file fallback there.
+  if (process.platform === "linux" && !process.env["DBUS_SESSION_BUS_ADDRESS"]) {
+    return false;
+  }
+
+  return true;
 }
 
 function parseKeyMaterial(value: string, source: string): Buffer {
