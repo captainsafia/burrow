@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { mkdir, rm, symlink } from "node:fs/promises";
+import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -544,6 +544,65 @@ describe("Integration Tests", () => {
       });
       expect(result.exitCode).not.toBe(0);
       expect(result.stderr).toContain("Invalid");
+    });
+  });
+
+  describe("Import command", () => {
+    test("imports dotenv files into the current directory scope", async () => {
+      const envPath = join(ctx.repo, ".env");
+      await writeFile(envPath, "API_KEY=secret\nDATABASE_URL=postgres://localhost/db\n");
+
+      const result = await runBurrow(["import"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain(`Imported 2 secrets from .env to ${ctx.repo}`);
+
+      const exported = await runBurrow(["export", "--format", "json"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(JSON.parse(exported.stdout)).toEqual({
+        API_KEY: "secret",
+        DATABASE_URL: "postgres://localhost/db",
+      });
+    });
+
+    test("imports a specified dotenv file into a path scope", async () => {
+      const envPath = join(ctx.root, "repo.env");
+      await writeFile(envPath, "SCOPED=value\n");
+
+      const result = await runBurrow(["import", envPath, "--path", ctx.sub], {
+        cwd: ctx.root,
+        configDir: ctx.configDir,
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain(`Imported 1 secret from ${envPath} to ${ctx.sub}`);
+
+      const get = await runBurrow(["get", "SCOPED", "--format", "json"], {
+        cwd: ctx.sub,
+        configDir: ctx.configDir,
+      });
+
+      expect(get.exitCode).toBe(0);
+      expect(JSON.parse(get.stdout).sourcePath).toBe(ctx.sub);
+    });
+
+    test("reports invalid dotenv keys", async () => {
+      const envPath = join(ctx.repo, ".env");
+      await writeFile(envPath, "BAD-KEY=value\n");
+
+      const result = await runBurrow(["import"], {
+        cwd: ctx.repo,
+        configDir: ctx.configDir,
+      });
+
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain("Invalid environment variable key");
     });
   });
 

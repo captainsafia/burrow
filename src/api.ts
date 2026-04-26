@@ -15,6 +15,9 @@ import {
   generateShellCommands,
   resolveToLoadedSecrets,
   computeHookDiff,
+  parseImport,
+  type ImportFormat,
+  type ImportedSecret,
 } from "./core/index.ts";
 import { type TrustedPath } from "./storage/index.ts";
 
@@ -23,6 +26,7 @@ export type { ExportFormat };
 export type { TrustCheckResult };
 export type { LoadedSecret, HookDiff };
 export type { TrustedPath };
+export type { ImportFormat, ImportedSecret };
 
 /**
  * Configuration options for creating a BurrowClient instance.
@@ -230,6 +234,39 @@ export interface ExportOptions {
    * Only applies when format is `json`.
    */
   includeSources?: boolean;
+}
+
+/**
+ * Options for the `import` method.
+ */
+export interface ImportOptions {
+  /**
+   * Import format parser to use.
+   * Defaults to `dotenv`.
+   */
+  format?: ImportFormat;
+
+  /**
+   * Directory path to scope imported secrets to.
+   * Defaults to the current working directory.
+   */
+  path?: string;
+}
+
+/**
+ * Result of the `import` method.
+ */
+export interface ImportResult {
+  /**
+   * The canonicalized path that imported secrets were scoped to.
+   */
+  path: string;
+
+  /**
+   * Imported secret entries, in file order with duplicate keys collapsed to
+   * the last value found in the source.
+   */
+  imported: ImportedSecret[];
 }
 
 /**
@@ -469,6 +506,40 @@ export class BurrowClient {
     return format(secrets, fmt, {
       includeSources: options.includeSources,
     });
+  }
+
+  /**
+   * Imports secrets from a serialized source into the store.
+   *
+   * The imported secrets are written at a single path scope. If a key appears
+   * multiple times in the import source, the last value wins.
+   *
+   * @param content - Serialized secrets to import
+   * @param options - Import options including format and target path
+   * @returns Import result including the target path and imported keys
+   *
+   * @example
+   * ```typescript
+   * await client.import('API_KEY=secret\nDATABASE_URL=postgres://...', {
+   *   format: 'dotenv',
+   *   path: '/projects/myapp'
+   * });
+   * ```
+   */
+  async import(content: string, options: ImportOptions = {}): Promise<ImportResult> {
+    const format = options.format ?? "dotenv";
+    const imported = parseImport(content, { format });
+    const targetPath = options.path ?? process.cwd();
+    const canonicalPath = await canonicalize(targetPath, this.pathOptions);
+
+    for (const secret of imported) {
+      await this.storage.setSecret(canonicalPath, secret.key, secret.value);
+    }
+
+    return {
+      path: canonicalPath,
+      imported,
+    };
   }
 
   /**

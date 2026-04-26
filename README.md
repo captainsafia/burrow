@@ -71,6 +71,16 @@ burrow export --format dotenv
 burrow export --format json
 ```
 
+### Import from a .env file
+
+```bash
+# Imports .env from the current directory
+burrow import
+
+# Or import a specific dotenv file into a path scope
+burrow import .env.local --path ~/projects/app
+```
+
 ### Block inheritance
 
 ```bash
@@ -125,6 +135,10 @@ const client = new BurrowClient();
 
 try {
   await client.set('API_KEY', 'secret123', { path: '/my/project' });
+  await client.import('DATABASE_URL=postgres://localhost/mydb', {
+    format: 'dotenv',
+    path: '/my/project'
+  });
 
   const secret = await client.get('API_KEY', { cwd: '/my/project/subdir' });
   console.log(secret?.value); // 'secret123'

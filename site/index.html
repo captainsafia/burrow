@@ -884,6 +884,14 @@ API_KEY  sk-live-abc123  ~/projects`;
                 </div>
 
                 <div class="command-group">
+                    <h3>Import from .env</h3>
+                    <p>Import secrets from a dotenv file into the current directory scope:</p>
+                    <pre><code>burrow import .env</code></pre>
+                    <p>Scope imported secrets to another directory:</p>
+                    <pre><code>burrow import .env --path ~/projects/myapp</code></pre>
+                </div>
+
+                <div class="command-group">
                     <h3>Auto-load secrets</h3>
                     <p>Set up automatic loading when you enter a trusted directory:</p>
                     <pre><code># Install the shell hook (one-time setup)
@@ -924,6 +932,10 @@ burrow trust .</code></pre>
                         <tr>
                             <td>burrow export</td>
                             <td>Export secrets as environment variables</td>
+                        </tr>
+                        <tr>
+                            <td>burrow import [file]</td>
+                            <td>Import secrets from a dotenv file</td>
                         </tr>
                         <tr>
                             <td>burrow unset &lt;key&gt;</td>

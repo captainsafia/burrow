@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { Command, Option } from "commander";
-import { BurrowClient, type ExportFormat } from "./api.ts";
+import { BurrowClient, type ExportFormat, type ImportFormat } from "./api.ts";
 import clipboardy from "clipboardy";
 import { ReleaseNotifier } from "gh-release-update-notifier";
 import { spawn } from "child_process";
@@ -289,6 +289,32 @@ program
           console.error("Warning: Could not copy to clipboard");
         }
       }
+    } catch (error) {
+      console.error(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("import")
+  .description("Import secrets from a file")
+  .argument("[file]", "File to import (default: .env)")
+  .addOption(new Option("-f, --format <format>", "Import format").choices(["dotenv"]).default("dotenv"))
+  .option("-p, --path <dir>", "Directory to scope imported secrets to (default: cwd)", validatePath)
+  .action(async (fileArg: string | undefined, options: { format: string; path?: string }) => {
+    using client = new BurrowClient();
+    const filePath = fileArg ?? ".env";
+
+    try {
+      const content = await Bun.file(filePath).text();
+      const result = await client.import(content, {
+        format: options.format as ImportFormat,
+        path: options.path,
+      });
+
+      const count = result.imported.length;
+      const secretLabel = count === 1 ? "secret" : "secrets";
+      console.log(`Imported ${count} ${secretLabel} from ${filePath} to ${result.path}`);
     } catch (error) {
       console.error(`Error: ${(error as Error).message}`);
       process.exit(1);

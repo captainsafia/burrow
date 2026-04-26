@@ -239,6 +239,43 @@ describe("BurrowClient", () => {
     });
   });
 
+  describe("import", () => {
+    test("imports dotenv secrets at the default path", async () => {
+      const result = await client.import("API_KEY=secret\nDATABASE_URL=postgres://localhost/db", {
+        path: testDir,
+      });
+
+      expect(result.path).toBe(testDir);
+      expect(result.imported).toEqual([
+        { key: "API_KEY", value: "secret" },
+        { key: "DATABASE_URL", value: "postgres://localhost/db" },
+      ]);
+
+      const apiKey = await client.get("API_KEY", { cwd: testDir });
+      const databaseUrl = await client.get("DATABASE_URL", { cwd: testDir });
+      expect(apiKey?.value).toBe("secret");
+      expect(databaseUrl?.value).toBe("postgres://localhost/db");
+    });
+
+    test("overwrites existing values with imported values", async () => {
+      await client.set("API_KEY", "old", { path: testDir });
+
+      await client.import("API_KEY=new", { path: testDir });
+
+      const secret = await client.get("API_KEY", { cwd: testDir });
+      expect(secret?.value).toBe("new");
+    });
+
+    test("throws without writing any secrets when import validation fails", async () => {
+      await expect(
+        client.import("GOOD=value\nBAD-KEY=value", { path: testDir })
+      ).rejects.toThrow("Invalid environment variable key");
+
+      const secret = await client.get("GOOD", { cwd: testDir });
+      expect(secret).toBeUndefined();
+    });
+  });
+
   describe("resolve", () => {
     test("returns Map of resolved secrets", async () => {
       await client.set("KEY1", "value1", { path: testDir });
